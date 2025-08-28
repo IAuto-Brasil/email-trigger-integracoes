@@ -142,25 +142,6 @@ class EmailService {
         },
       });
 
-      console.log(
-        `📬 Novo email salvo - De: ${parsedEmail.from} | Assunto: ${parsedEmail.subject}`
-      );
-
-      // https://api.homologacao.iautobrasil.com.br/server-iauto/api/receive-message-portals
-      // Esse endpoint aguardar um body parameters, como no exemplo abaixo
-
-      //     {
-      //   "leadName": "Tiago Dias Laureano",
-      //   "leadEmail": "tiagodiaslaureano32@gmail.com",
-      //   "leadPhone": "21 970042051",
-      //   "vehicle": "Toyota Corolla 1.8 Dual VVT GLi Multi-Drive (Flex) 2018.0 2018 ",
-      //   "from": "carros@icarros.com.br",
-      //   "to": "iautobrasildev@gmail.com",
-      //   "portal": "iCarros",
-      //   "valueRaw": "R$ 84.900",
-      //   "value": "84900"
-      // }
-
       const result = processEmail(parsedEmail);
 
       if (!result) {

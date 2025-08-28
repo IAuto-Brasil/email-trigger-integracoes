@@ -66,6 +66,8 @@ export async function monitorEmailAccount(
     await client.connect();
     await client.mailboxOpen("INBOX");
 
+    console.log(`✅ Monitorando ${email} com sucesso!`);
+
     activeConnections[email] = client;
     retryDelays[email] = 2000;
 
