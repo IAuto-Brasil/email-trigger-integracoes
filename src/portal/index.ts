@@ -1,6 +1,7 @@
 import { ParsedEmail } from "../services/emailMonitor";
 import processChavesNaMao from "./chavesnamao";
 import processIcarros from "./icarros";
+import processMobiauto from "./mobiauto";
 import processUsadosBr from "./usadosbr";
 
 export default function processEmail(email: ParsedEmail) {
@@ -33,6 +34,11 @@ export default function processEmail(email: ParsedEmail) {
   if (portalDomain.includes("usadosbr")) {
     console.log("NOVO LEAD DA UsadosBr");
     return processUsadosBr(email);
+  }
+
+  if (portalDomain.includes("mobiauto")) {
+    console.log("NOVO LEAD DA Mobiauto");
+    return processMobiauto(email);
   }
 
   return null;
