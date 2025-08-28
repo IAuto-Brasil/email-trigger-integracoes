@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Email {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isActive  Boolean  @default(true)
+  companyId Int
+
+  // Relacionamento com emails recebidos
+  receivedEmails ReceivedEmail[]
+
+  @@map("emails")
+}
+
+model ReceivedEmail {
+  id          Int      @id @default(autoincrement())
+  emailId     Int
+  fromEmail   String?
+  toEmail     String?
+  subject     String?
+  textContent String?
+  htmlContent String?
+  attachments Json?    // Armazenar informações dos anexos em JSON
+  metadata    Json?    // Outros metadados do email
+  createdAt   DateTime @default(now())
+
+  // Relacionamento
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@map("received_emails")
+}
