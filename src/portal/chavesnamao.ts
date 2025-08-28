@@ -12,12 +12,13 @@ export default function processChavesNaMao(email: ParsedEmail) {
   const leadName = nameMatch ? nameMatch[1].trim() : "";
 
   // Telefone
-  const phoneMatch = html.match(/<b[^>]*>Telefone:?<\/b>\s*([^<]+)/i);
-  const leadPhone = phoneMatch ? phoneMatch[1].trim() : "";
+  const phoneMatch = html.match(/\(?\d{2}\)?\s?\d{4,5}-\d{4}/);
+  const leadPhone = phoneMatch ? phoneMatch[0].trim() : "";
 
-  // Email
-  const emailMatch = html.match(/<b[^>]*>Email:?<\/b>\s*([^<]+)/i);
-  const leadEmail = emailMatch ? emailMatch[1].trim() : "";
+  const emailMatch = html.match(
+    /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
+  );
+  const leadEmail = emailMatch ? emailMatch[0].trim() : "";
 
   // Veículo
   const vehicleMatch = html.match(/<h3[^>]*>([^<]+)<\/h3>/i);

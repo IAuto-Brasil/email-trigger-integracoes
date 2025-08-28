@@ -12,12 +12,14 @@ export default function processIcarros(email: ParsedEmail) {
   const leadName = nameMatch ? nameMatch[1].trim() : "";
 
   // Email
-  const emailMatch = text!.match(/E-mail\s+([\s\S]*?)\n/);
-  const leadEmail = emailMatch ? emailMatch[1].trim() : "";
+  const emailMatch = text!.match(
+    /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/
+  );
+  const leadEmail = emailMatch ? emailMatch[0].trim() : "";
 
   // Telefone
-  const phoneMatch = text!.match(/Telefone\s+([\s\S]*?)\n/);
-  const leadPhone = phoneMatch ? phoneMatch[1].trim() : "";
+  const phoneMatch = text!.match(/\(?\d{2}\)?\s?\d{4,5}-\d{4}/);
+  const leadPhone = phoneMatch ? phoneMatch[0].trim() : "";
 
   // Veículo + valor
   const vehicleMatch = text!.match(/Toyota[\s\S]*?\n/);

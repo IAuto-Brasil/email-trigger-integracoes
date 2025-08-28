@@ -163,21 +163,42 @@ class EmailService {
 
       const result = processEmail(parsedEmail);
 
+      if (!result) {
+        return;
+      }
+
+      console.log("Resultado do processamento:", result);
+
+      let phone = result.leadPhone || "";
+
+      phone = phone.replace(/\D/g, "");
+
+      if (!phone.startsWith("55")) {
+        phone = "55" + phone;
+      }
+
       if (result) {
-        await axios.post(
-          "https://api.homologacao.iautobrasil.com.br/server-iauto/api/receive-message-portals",
-          {
-            leadName: result.leadName,
-            leadEmail: result.leadEmail,
-            leadPhone: result.leadPhone,
-            vehicle: result.vehicle,
-            from: result.from,
-            to: result.to,
-            portal: result.portal,
-            valueRaw: result.valueRaw,
-            value: result.value,
-          }
-        );
+        await axios
+          .post(
+            "https://api.homologacao.iautobrasil.com.br/server-iauto/api/receive-message-portals",
+            {
+              leadName: result.leadName,
+              leadEmail: result.leadEmail,
+              //leadPhone: phone,
+              leadPhone: 5521970042051,
+              vehicle: result.vehicle,
+              from: result.from,
+              to: result.to,
+              portal: result.portal,
+              valueRaw: result.valueRaw,
+              value: result.value,
+            }
+          )
+          .then((res) => {
+            // limpe e deixe apenas os numeros
+            const cleanedPhone = result.leadPhone.replace(/\D/g, "");
+            console.log("Lead enviado para IAuto Brasil", cleanedPhone);
+          });
       }
 
       // Aqui você pode adicionar outras ações, como:
