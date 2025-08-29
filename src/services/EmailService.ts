@@ -131,17 +131,20 @@ class EmailService {
 
       if (result) {
         await axios
-          .post(this.MODE === "dev" ? this.DEV_ENDPOINT : this.PROD_ENDPOINT, {
-            leadName: result.leadName,
-            leadEmail: result.leadEmail,
-            leadPhone: phone,
-            vehicle: result.vehicle,
-            from: result.from,
-            to: result.to,
-            portal: result.portal,
-            valueRaw: result.valueRaw,
-            value: result.value,
-          })
+          .post(
+            "https://api.homologacao.iautobrasil.com.br/server-iauto/api/receive-message-portals",
+            {
+              leadName: result.leadName,
+              leadEmail: result.leadEmail,
+              leadPhone: phone,
+              vehicle: result.vehicle,
+              from: result.from,
+              to: result.to,
+              portal: result.portal,
+              valueRaw: result.valueRaw,
+              value: result.value,
+            }
+          )
           .then((res) => {
             const cleanedPhone = result.leadPhone.replace(/\D/g, "");
             console.log("Lead enviado para IAuto Brasil", cleanedPhone);
