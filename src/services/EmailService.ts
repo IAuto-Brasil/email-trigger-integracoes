@@ -5,14 +5,12 @@ import processEmail from "../portal";
 import { createEmailAccount } from "./cpanelService";
 import { monitorEmailAccount, ParsedEmail } from "./emailMonitor";
 
-const MODE = "dev";
-const DEV_ENDPOINT =
-  "https://api.homologacao.iautobrasil.com.br/server-iauto/api/receive-message-portals";
-const PROD_ENDPOINT =
-  "https://api.sistema.iautobrasil.com.br/server-iauto/api/receive-message-portals";
-
 class EmailService {
   private monitoredEmails: Set<string> = new Set();
+
+  MODE = process.env.MODE!;
+  DEV_ENDPOINT = process.env.DEV_ENDPOINT!;
+  PROD_ENDPOINT = process.env.PROD_ENDPOINT!;
 
   /**
    * Cria uma nova conta de email e inicia o monitoramento
@@ -133,22 +131,18 @@ class EmailService {
 
       if (result) {
         await axios
-          .post(
-            "https://api.homologacao.iautobrasil.com.br/server-iauto/api/receive-message-portals",
-            {
-              leadName: result.leadName,
-              leadEmail: result.leadEmail,
-              leadPhone: phone,
-              vehicle: result.vehicle,
-              from: result.from,
-              to: result.to,
-              portal: result.portal,
-              valueRaw: result.valueRaw,
-              value: result.value,
-            }
-          )
+          .post(this.MODE === "dev" ? this.DEV_ENDPOINT : this.PROD_ENDPOINT, {
+            leadName: result.leadName,
+            leadEmail: result.leadEmail,
+            leadPhone: this.MODE === "dev" ? 5521970042051 : phone,
+            vehicle: result.vehicle,
+            from: result.from,
+            to: result.to,
+            portal: result.portal,
+            valueRaw: result.valueRaw,
+            value: result.value,
+          })
           .then((res) => {
-            // limpe e deixe apenas os numeros
             const cleanedPhone = result.leadPhone.replace(/\D/g, "");
             console.log("Lead enviado para IAuto Brasil", cleanedPhone);
           });
