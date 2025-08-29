@@ -60,10 +60,6 @@ class EmailService {
       // Inicia o monitoramento
       await this.startMonitoring(emailData);
 
-      console.log(
-        `✅ Email ${emailData.email} criado e monitoramento iniciado`
-      );
-
       return {
         success: true,
         message: "Email criado e monitoramento iniciado com sucesso",

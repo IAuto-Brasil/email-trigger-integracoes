@@ -2,15 +2,49 @@ import express, { Request, Response } from "express";
 import { config } from "./config";
 import { prisma } from "../prisma";
 import { emailService } from "./services/EmailService";
+import { setupSwagger } from "./swagger";
+import "dotenv/config";
 
 const app = express();
 
 // Middleware para parsing do JSON
 app.use(express.json());
+setupSwagger(app);
 
 /**
- * Endpoint para criar email e iniciar monitoramento
- * POST /api/create-email/:companyId
+ * @swagger
+ * /api/create-email/{companyId}:
+ *   post:
+ *     summary: Cria email e inicia monitoramento
+ *     tags:
+ *       - Emails
+ *     description: Cria uma conta de email para a empresa e inicia o monitoramento.
+ *     parameters:
+ *       - in: path
+ *         name: companyId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID da empresa
+ *     responses:
+ *       200:
+ *         description: Email criado e monitorado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Email criado e monitoramento iniciado com sucesso"
+ *                 email:
+ *                   type: string
+ *                   example: "exemplo@empresa.com"
+ *       400:
+ *         description: ID da empresa inválido
  */
 app.post(
   "/api/create-email/:companyId",
@@ -44,8 +78,30 @@ app.post(
 );
 
 /**
- * Endpoint para listar emails monitorados
- * GET /api/monitored-emails
+ * @swagger
+ * /api/monitored-emails:
+ *   get:
+ *     summary: Lista os emails que estão sendo monitorados
+ *     tags:
+ *       - Emails
+ *     responses:
+ *       200:
+ *         description: Lista de emails monitorados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: integer
+ *                   example: 2
+ *                 emails:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   example:
+ *                     - "email1@iautobrasil.com"
+ *                     - "email2@iautobrasil.com"
  */
 app.get("/api/monitored-emails", (req: Request, res: Response) => {
   const monitoredEmails = emailService.getMonitoredEmails();
@@ -56,72 +112,36 @@ app.get("/api/monitored-emails", (req: Request, res: Response) => {
 });
 
 /**
- * Endpoint para listar emails recebidos de uma empresa
- * GET /api/received-emails/:companyId
- */
-app.get(
-  "/api/received-emails/:companyId",
-  async (req: Request, res: Response) => {
-    const { companyId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
-
-    try {
-      const emailAccount = await prisma.email.findFirst({
-        where: { companyId: Number(companyId) },
-      });
-
-      if (!emailAccount) {
-        return res.status(404).json({
-          success: false,
-          message: "Conta de email não encontrada para esta empresa",
-        });
-      }
-
-      const receivedEmails = await prisma.receivedEmail.findMany({
-        where: { emailId: emailAccount.id },
-        orderBy: { createdAt: "desc" },
-        skip: (Number(page) - 1) * Number(limit),
-        take: Number(limit),
-        select: {
-          id: true,
-          fromEmail: true,
-          toEmail: true,
-          subject: true,
-          textContent: true,
-          htmlContent: true,
-          attachments: true,
-          metadata: true,
-          createdAt: true,
-        },
-      });
-
-      const total = await prisma.receivedEmail.count({
-        where: { emailId: emailAccount.id },
-      });
-
-      res.json({
-        success: true,
-        data: receivedEmails,
-        pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total,
-          pages: Math.ceil(total / Number(limit)),
-        },
-      });
-    } catch (error) {
-      console.error("Erro ao buscar emails recebidos:", error);
-      res.status(500).json({
-        success: false,
-        message: "Erro interno do servidor",
-      });
-    }
-  }
-);
-
-/**
- * Endpoint para parar monitoramento de um email
- * POST /api/stop-monitoring/:companyId
+ * @swagger
+ * /api/stop-monitoring/{companyId}:
+ *   post:
+ *     summary: Para o monitoramento de um email
+ *     tags:
+ *       - Emails
+ *     description: Para o monitoramento de um email específico.
+ *     parameters:
+ *       - in: path
+ *         name: companyId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID da empresa
+ *     responses:
+ *       200:
+ *         description: Monitoramento parado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Monitoramento parado com sucesso"
+ *       400:
+ *         description: ID da empresa inválido
  */
 app.post(
   "/api/stop-monitoring/:companyId",
@@ -157,8 +177,31 @@ app.post(
 );
 
 /**
- * Endpoint de health check
- * GET /api/health
+ * @swagger
+ * /api/health:
+ *   get:
+ *     summary: Verifica o status do servidor
+ *     tags:
+ *       - Health
+ *     description: Retorna o status atual do servidor, incluindo o número de emails sendo monitorados.
+ *     responses:
+ *       200:
+ *         description: Status do servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2023-05-15T12:34:56.789Z"
+ *                 monitoredEmails:
+ *                   type: integer
+ *                   example: 2
  */
 app.get("/api/health", (req: Request, res: Response) => {
   res.json({
