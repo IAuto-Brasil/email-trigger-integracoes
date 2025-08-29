@@ -29,7 +29,7 @@ TAREFA: Ler o conteúdo (headers, subject, texto e HTML) e retornar EXATAMENTE u
   {
     "leadName": "...",    // Separe o nome do lead de um suposto nome comercial, ex: João Car Shop > João, ou Carros do Fernando Lima > Fernando Lima
     "leadEmail": "...",   // Dentro do HTML, busque o email do lead, não do remetente ou destinatário
-    "leadPhone": "...",   // Formate como DDI DDD e número juntos, ex.: "5521970042051"
+    "leadPhone": "...",   // Formate como DDI DDD e número juntos, ex.: "5521970042051" sem espacos
     "vehicle": "...",     // Nome completo do veículo (marca, modelo, versão, ano quando houver)
     "from": "...",        // remetente (email)
     "to": "...",          // destinatário (email) sempre utilize o destinário que contenha o domain @iautobrasil.com, ex: 15@iautobrasil.com, 76@iautobrasil.com e etc... {id}@iautobrasil.com
@@ -102,19 +102,6 @@ function postNormalize(item: LeadJson, email: ParsedEmail): LeadJson {
     // adiciona pontos a cada 3 dígitos
     const br = int.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     norm.valueRaw = `R$ ${br}`;
-  }
-
-  // phone: deixa como "DD NNNNNNNNN" (um espaço depois do DDD)
-  if (norm.leadPhone) {
-    const d = norm.leadPhone.replace(/\D+/g, "");
-    if (d.length >= 10) {
-      const core = d.slice(-11); // pega 10/11 últimos
-      if (core.length === 11)
-        norm.leadPhone = `${core.slice(0, 2)} ${core.slice(2)}`;
-      else norm.leadPhone = `${core.slice(0, 2)} ${core.slice(2)}`;
-    } else if (d) {
-      norm.leadPhone = d;
-    }
   }
 
   // Campos obrigatórios vazios viram string vazia (já estão)
