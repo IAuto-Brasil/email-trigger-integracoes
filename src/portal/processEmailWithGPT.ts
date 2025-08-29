@@ -59,7 +59,6 @@ function buildUserPrompt(email: ParsedEmail) {
     "\n\n### FROM ###\n" + (email.from || ""),
     "\n\n### TO ###\n" + (email.to || ""),
     "\n\n### PORTAL HINT ###\n" + (email.portalHint || ""),
-    "\n\n### TEXT ###\n" + (email.text || ""),
     "\n\n### HTML ###\n" + (email.html || ""),
   ];
   return parts.join("\n");

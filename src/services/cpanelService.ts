@@ -49,37 +49,6 @@ export async function createEmailAccount(
 }
 
 /**
- * Cria um forwarder para redirecionar os e-mails
- */
-export async function createForwarder(email: string, forwardTo: string) {
-  try {
-    const response = await axios.get(`${host}/execute/Email/add_forwarder`, {
-      headers: getAuthHeader(),
-      params: {
-        email: `${email}@${domain}`,
-        fwdopt: "fwd",
-        fwdemail: forwardTo,
-      },
-      timeout: 30000,
-    });
-
-    if (response.data?.errors && response.data.errors.length > 0) {
-      throw new Error(
-        `Erro do cPanel: ${JSON.stringify(response.data.errors)}`
-      );
-    }
-
-    return response.data;
-  } catch (error) {
-    console.error(
-      `Erro ao criar forwarder ${email}@${domain} -> ${forwardTo}:`,
-      error
-    );
-    throw error;
-  }
-}
-
-/**
  * Lista todas as contas de e-mail do domínio
  */
 export async function listEmails() {

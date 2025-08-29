@@ -46,9 +46,29 @@ setupSwagger(app);
  *       400:
  *         description: ID da empresa inválido
  */
+
+// receber um Authorization Bearer
 app.post(
   "/api/create-email/:companyId",
   async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "Authorization header missing",
+      });
+    }
+
+    if (
+      authHeader !==
+      "630f4367aa75d640ca95e5153142f3cb5f5a0421da5777b1095a0a59f2f30a50"
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Authorization header invalid",
+      });
+    }
+
     const { companyId } = req.params;
 
     // Validação básica

@@ -109,35 +109,6 @@ class EmailService {
    */
   private async handleNewEmail(emailId: number, parsedEmail: ParsedEmail) {
     try {
-      // Prepara os anexos para salvar no banco
-      // const attachments = parsedEmail.attachments.map((att) => ({
-      //   filename: att.filename,
-      //   contentType: att.contentType,
-      //   size: att.size,
-      //   // Não salvamos o conteúdo do anexo no banco por questões de performance
-      //   // Se necessário, pode ser salvo em um sistema de arquivos separado
-      // }));
-
-      // // Salva o email recebido no banco
-      // await prisma.receivedEmail.create({
-      //   data: {
-      //     emailId,
-      //     fromEmail: parsedEmail.from,
-      //     toEmail: parsedEmail.to,
-      //     subject: parsedEmail.subject,
-      //     textContent: parsedEmail.text,
-      //     htmlContent:
-      //       typeof parsedEmail.html === "string" ? parsedEmail.html : null,
-      //     attachments:
-      //       attachments.length > 0 ? { set: attachments } : { set: [] },
-      //     metadata: {
-      //       hasAttachments: attachments.length > 0,
-      //       attachmentCount: attachments.length,
-      //       receivedAt: new Date().toISOString(),
-      //     },
-      //   },
-      // });
-
       const result = await processEmail(parsedEmail);
 
       if (!result) {
@@ -161,7 +132,8 @@ class EmailService {
             {
               leadName: result.leadName,
               leadEmail: result.leadEmail,
-              leadPhone: phone,
+              // leadPhone: phone,
+              leadPhone: 21970042051,
               vehicle: result.vehicle,
               from: result.from,
               to: result.to,
@@ -176,11 +148,6 @@ class EmailService {
             console.log("Lead enviado para IAuto Brasil", cleanedPhone);
           });
       }
-
-      // Aqui você pode adicionar outras ações, como:
-      // - Processar o conteúdo do email
-      // - Integrar com outros sistemas
-      // - Enviar notificação
     } catch (error) {
       console.error("❌ Erro ao salvar email recebido:", error);
     }
