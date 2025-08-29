@@ -29,7 +29,7 @@ TAREFA: Ler o conteúdo (headers, subject, texto e HTML) e retornar EXATAMENTE u
   {
     "leadName": "...",    // Separe o nome do lead de um suposto nome comercial, ex: João Car Shop > João, ou Carros do Fernando Lima > Fernando Lima
     "leadEmail": "...",   // Dentro do HTML, busque o email do lead, não do remetente ou destinatário
-    "leadPhone": "...",   // Formate como DDD e número juntos, ex.: "21970042051"
+    "leadPhone": "...",   // Formate como DDI DDD e número juntos, ex.: "5521970042051"
     "vehicle": "...",     // Nome completo do veículo (marca, modelo, versão, ano quando houver)
     "from": "...",        // remetente (email)
     "to": "...",          // destinatário (email) sempre utilize o destinário que contenha o domain @iautobrasil.com, ex: 15@iautobrasil.com, 76@iautobrasil.com e etc... {id}@iautobrasil.com
