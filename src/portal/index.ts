@@ -41,5 +41,10 @@ export default function processEmail(email: ParsedEmail) {
     return processMobiauto(email);
   }
 
+  if (portalDomain.includes("socarrao")) {
+    console.log("NOVO LEAD DO Socarrao");
+    console.log(email.html);
+  }
+
   return null;
 }

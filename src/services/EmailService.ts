@@ -144,8 +144,6 @@ class EmailService {
         return;
       }
 
-      console.log("Resultado do processamento:", result);
-
       let phone = result.leadPhone || "";
 
       phone = phone.replace(/\D/g, "");
@@ -153,6 +151,8 @@ class EmailService {
       if (!phone.startsWith("55")) {
         phone = "55" + phone;
       }
+
+      console.log(result);
 
       if (result) {
         await axios
