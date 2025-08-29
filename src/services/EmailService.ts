@@ -134,7 +134,7 @@ class EmailService {
           .post(this.MODE === "dev" ? this.DEV_ENDPOINT : this.PROD_ENDPOINT, {
             leadName: result.leadName,
             leadEmail: result.leadEmail,
-            leadPhone: this.MODE === "dev" ? 5521970042051 : phone,
+            leadPhone: phone,
             vehicle: result.vehicle,
             from: result.from,
             to: result.to,
