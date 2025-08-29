@@ -5,6 +5,12 @@ import processEmail from "../portal";
 import { createEmailAccount } from "./cpanelService";
 import { monitorEmailAccount, ParsedEmail } from "./emailMonitor";
 
+const MODE = "dev";
+const DEV_ENDPOINT =
+  "https://api.homologacao.iautobrasil.com.br/server-iauto/api/receive-message-portals";
+const PROD_ENDPOINT =
+  "https://api.sistema.iautobrasil.com.br/server-iauto/api/receive-message-portals";
+
 class EmailService {
   private monitoredEmails: Set<string> = new Set();
 
