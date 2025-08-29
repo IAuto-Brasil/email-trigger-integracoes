@@ -12,7 +12,7 @@ const options: swaggerJsdoc.Options = {
     },
     servers: [
       {
-        url: "http://localhost:3000",
+        url: "https://email-trigger-app.q60ybw.easypanel.host",
       },
     ],
   },
