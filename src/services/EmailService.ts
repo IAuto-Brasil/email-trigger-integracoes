@@ -161,8 +161,7 @@ class EmailService {
             {
               leadName: result.leadName,
               leadEmail: result.leadEmail,
-              //leadPhone: phone,
-              leadPhone: 5521970042051,
+              leadPhone: phone,
               vehicle: result.vehicle,
               from: result.from,
               to: result.to,
