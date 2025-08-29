@@ -138,7 +138,7 @@ class EmailService {
       //   },
       // });
 
-      const result = processEmail(parsedEmail);
+      const result = await processEmail(parsedEmail);
 
       if (!result) {
         return;
