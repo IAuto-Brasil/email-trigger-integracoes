@@ -254,14 +254,6 @@ async function startServer() {
     console.log("🔄 Iniciando monitoramento dos emails existentes...");
     await emailService.startAllMonitoring();
 
-    console.log("Modo:" + process.env.MODE);
-    console.log(
-      "ENDPOINT:" +
-        (process.env.MODE === "dev"
-          ? process.env.DEV_ENDPOINT
-          : process.env.PROD_ENDPOINT)
-    );
-
     // Inicia o servidor
     app.listen(config.server.port, () => {
       console.log(

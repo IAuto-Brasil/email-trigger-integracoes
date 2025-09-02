@@ -8,10 +8,6 @@ import { monitorEmailAccount, ParsedEmail } from "./emailMonitor";
 class EmailService {
   private monitoredEmails: Set<string> = new Set();
 
-  MODE = process.env.MODE!;
-  DEV_ENDPOINT = process.env.DEV_ENDPOINT!;
-  PROD_ENDPOINT = process.env.PROD_ENDPOINT!;
-
   /**
    * Cria uma nova conta de email e inicia o monitoramento
    */
