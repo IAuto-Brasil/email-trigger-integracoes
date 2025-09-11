@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
 import { config } from "./config";
 import { prisma } from "../prisma";
-import { emailService } from "./services/EmailService";
+import { emailService } from "./services/email-service";
 import { setupSwagger } from "./swagger";
 import "dotenv/config";
 

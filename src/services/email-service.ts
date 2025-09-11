@@ -2,15 +2,14 @@ import axios from "axios";
 import { prisma } from "../../prisma";
 import { config } from "../config";
 import processEmail from "../portal";
-import { createEmailAccount } from "./cpanelService";
+import { createEmailAccount } from "./cpanel-service";
 import {
   monitorEmailAccountRefactor,
   ParsedEmail,
   cleanupOldProcessedEmails,
-} from "./emailMonitorRefactor";
+} from "./email-monitor";
 
 class EmailService {
-  private monitoredEmails: Set<string> = new Set();
   private scheduledInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
 
@@ -121,7 +120,7 @@ class EmailService {
           });
       }
     } catch (error) {
-      console.error("❌ Erro ao salvar email recebido:", error);
+      console.error("❌ Erro ao se comunicar com o servidor:", error);
     }
   }
 
@@ -180,7 +179,6 @@ class EmailService {
    * Inicia o agendamento do monitoramento
    */
   startScheduledMonitoring(intervalMinutes: number = 1) {
-    // Para o agendamento anterior se existir
     this.stopScheduledMonitoring();
 
     const intervalMs = intervalMinutes * 60 * 1000;
@@ -189,23 +187,17 @@ class EmailService {
       `⏰ Iniciando monitoramento agendado a cada ${intervalMinutes} minuto(s)`
     );
 
-    // Executa imediatamente
     this.runMonitoringCycle();
 
-    // Agenda execuções periódicas
     this.scheduledInterval = setInterval(() => {
       this.runMonitoringCycle();
     }, intervalMs);
 
-    // Agenda limpeza do banco a cada 6 horas
     setInterval(() => {
       this.runCleanup();
     }, 6 * 60 * 60 * 1000);
   }
 
-  /**
-   * Para o agendamento do monitoramento
-   */
   stopScheduledMonitoring() {
     if (this.scheduledInterval) {
       clearInterval(this.scheduledInterval);
@@ -214,9 +206,6 @@ class EmailService {
     }
   }
 
-  /**
-   * Executa limpeza de emails antigos
-   */
   async runCleanup() {
     try {
       console.log("🧹 Executando limpeza de emails antigos...");

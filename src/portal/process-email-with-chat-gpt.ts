@@ -70,13 +70,6 @@ function buildUserPrompt(email: ParsedEmail) {
   return parts.join("\n");
 }
 
-function sanitizeJsonStr(str: string): string {
-  return str
-    .replace(/```(?:json)?/gi, "") // tira blocos markdown
-    .replace(/[\u0000-\u001F]+/g, "") // tira chars de controle
-    .trim();
-}
-
 // Parsing resiliente do JSON (tenta achar o primeiro '[' até o par correspondente)
 function safeParseArray(jsonStr: string): LeadJson[] {
   const first = jsonStr.indexOf("[");

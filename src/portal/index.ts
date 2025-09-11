@@ -1,7 +1,6 @@
-import processEmailWithGPT from "./processEmailWithGPT";
+import processEmailWithGPT from "./process-email-with-chat-gpt";
 
 export default function processEmail(email: any) {
-  // gerenciar com RabbitMQ
   try {
     return processEmailWithGPT(email);
   } catch (error) {
