@@ -23,4 +23,8 @@ export const config = {
     database: process.env.POSTGRES_DB!,
     url: process.env.DATABASE_URL!,
   },
+  endpoints: {
+    dev: process.env.DEV_ENDPOINT!,
+    prod: process.env.PROD_ENDPOINT!,
+  },
 };

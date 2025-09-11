@@ -33,7 +33,7 @@ TAREFA: Ler o conteúdo (headers, subject, texto e HTML) e retornar EXATAMENTE u
     "vehicle": "...",     // Nome completo do veículo (marca, modelo, versão, ano quando houver)
     "from": "...",        // remetente (email)
     "to": "...",          // destinatário (email) sempre utilize o destinário que contenha o domain @iautobrasil.com, ex: 15@iautobrasil.com, 76@iautobrasil.com e etc... {id}@iautobrasil.com
-    "portal": "...",      // nome do portal (ex.: "iCarros", "SóCarrão", "NaPista", "MobiAuto", "UsadosBr")
+    "portal": "...",      // nome do portal (ex.: "iCarros", "SóCarrão", "NaPista", "MobiAuto", "UsadosBr", "Chaves na Mão")
     "valueRaw": "...",    // preço no formato BR com R$, ex.: "R$ 56.900", "R$ 108.900"
     "value": "..."        // apenas dígitos do preço, ex.: "56900" ou "10890000" se vier com centavos
   }
@@ -151,7 +151,7 @@ export default async function processEmailWithGPT(
   // Se não veio um array JSON, tenta uma 2ª vez pedindo correção
   if (!text.includes("[") || !text.includes("]")) {
     const fix = await client.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-4-turbo",
       temperature: 0,
       messages: [
         { role: "system", content: SYS_PROMPT },
