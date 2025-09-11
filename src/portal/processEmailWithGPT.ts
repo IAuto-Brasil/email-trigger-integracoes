@@ -47,7 +47,13 @@ REGRAS:
 - "portal": use uma das pistas (domínio do remetente, assinatura, logos) para inferir. Se não der, use a dica recebida (portalHint).
 - "from" e "to": devem ser e-mails; se houver múltiplos "to", escolha o que conter o domain @iautobrasil.com correspondente ao id  da loja.
 - "leadPhone": mantenha apenas dígitos  Ex.: "(21) 97004-2051" -> "21970042051".
-- NUNCA mude os nomes dos campos. NUNCA retorne mais de um objeto no array.
+- NUNCA mude os nomes dos campos.
+
+IMPORTANTE:
+- Responda apenas com um array JSON válido.
+- Não inclua explicações, comentários, texto fora do array ou blocos de código.
+- Sua saída deve começar com '[' e terminar com ']'.
+
 `;
 
 // Pequena ajudinha para delimitar o payload sem confundir o modelo
@@ -64,21 +70,29 @@ function buildUserPrompt(email: ParsedEmail) {
   return parts.join("\n");
 }
 
+function sanitizeJsonStr(str: string): string {
+  return str
+    .replace(/```(?:json)?/gi, "") // tira blocos markdown
+    .replace(/[\u0000-\u001F]+/g, "") // tira chars de controle
+    .trim();
+}
+
 // Parsing resiliente do JSON (tenta achar o primeiro '[' até o par correspondente)
 function safeParseArray(jsonStr: string): LeadJson[] {
+  const first = jsonStr.indexOf("[");
+  const last = jsonStr.lastIndexOf("]");
+  if (first >= 0 && last > first) {
+    const slice = jsonStr.slice(first, last + 1);
+    const parsed = JSON.parse(slice);
+    if (Array.isArray(parsed)) return parsed as LeadJson[];
+  }
+  // fallback direto
   try {
-    const first = jsonStr.indexOf("[");
-    const last = jsonStr.lastIndexOf("]");
-    if (first >= 0 && last > first) {
-      const slice = jsonStr.slice(first, last + 1);
-      const parsed = JSON.parse(slice);
-      if (Array.isArray(parsed)) return parsed as LeadJson[];
-    }
-    // fallback direto
     const parsed = JSON.parse(jsonStr);
     if (Array.isArray(parsed)) return parsed as LeadJson[];
   } catch (_) {}
-  throw new Error("Falha ao parsear JSON retornado pelo modelo.");
+
+  return [];
 }
 
 // Normaliza garantias mínimas (não quebra seu contrato)

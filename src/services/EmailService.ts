@@ -3,10 +3,16 @@ import { prisma } from "../../prisma";
 import { config } from "../config";
 import processEmail from "../portal";
 import { createEmailAccount } from "./cpanelService";
-import { monitorEmailAccount, ParsedEmail } from "./emailMonitor";
+import {
+  monitorEmailAccountRefactor,
+  ParsedEmail,
+  cleanupOldProcessedEmails,
+} from "./emailMonitorRefactor";
 
 class EmailService {
   private monitoredEmails: Set<string> = new Set();
+  private scheduledInterval: NodeJS.Timeout | null = null;
+  private isRunning: boolean = false;
 
   /**
    * Cria uma nova conta de email e inicia o monitoramento
@@ -23,13 +29,9 @@ class EmailService {
       });
 
       if (existingEmail) {
-        // Se existe mas não está sendo monitorado, inicia monitoramento
-        if (!this.monitoredEmails.has(existingEmail.email)) {
-          await this.startMonitoring(existingEmail);
-        }
         return {
           success: true,
-          message: "Email já existe e está sendo monitorado",
+          message: "Email já existe e será monitorado no próximo ciclo",
           email: existingEmail.email,
         };
       }
@@ -57,12 +59,9 @@ class EmailService {
         },
       });
 
-      // Inicia o monitoramento
-      await this.startMonitoring(emailData);
-
       return {
         success: true,
-        message: "Email criado e monitoramento iniciado com sucesso",
+        message: "Email criado e será monitorado no próximo ciclo",
         email: emailData.email,
       };
     } catch (error) {
@@ -76,31 +75,6 @@ class EmailService {
           error instanceof Error ? error.message : "Erro desconhecido"
         }`,
       };
-    }
-  }
-
-  /**
-   * Inicia o monitoramento de um email específico
-   */
-  private async startMonitoring(emailData: { id: number; email: string }) {
-    if (this.monitoredEmails.has(emailData.email)) {
-      console.log(`⚠️ Email ${emailData.email} já está sendo monitorado`);
-      return;
-    }
-
-    try {
-      await monitorEmailAccount(
-        emailData.email,
-        config.defaultPwd,
-        (parsedEmail) => this.handleNewEmail(emailData.id, parsedEmail)
-      );
-
-      this.monitoredEmails.add(emailData.email);
-    } catch (error) {
-      console.error(
-        `❌ Erro ao iniciar monitoramento de ${emailData.email}:`,
-        error
-      );
     }
   }
 
@@ -152,51 +126,167 @@ class EmailService {
   }
 
   /**
-   * Inicia o monitoramento de todos os emails existentes no banco
+   * Executa um ciclo de monitoramento de todos os emails
    */
-  async startAllMonitoring() {
+  async runMonitoringCycle() {
+    if (this.isRunning) {
+      console.log("⚠️ Ciclo anterior ainda em execução, pulando...");
+      return;
+    }
+
+    this.isRunning = true;
+    const startTime = Date.now();
+
     try {
+      // Busca todos os emails ativos
       const allEmails = await prisma.email.findMany({
         where: { isActive: true },
       });
 
       console.log(
-        `🔍 Iniciando monitoramento de ${allEmails.length} contas de email...`
+        `🔄 [${new Date().toLocaleTimeString()}] Iniciando ciclo de monitoramento de ${
+          allEmails.length
+        } contas...`
       );
 
-      for (const emailData of allEmails) {
-        await this.startMonitoring(emailData);
-        // Pequena pausa entre conexões para evitar sobrecarga
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+      // Processa cada email
+      const promises = allEmails.map(async (emailData) => {
+        try {
+          await monitorEmailAccountRefactor(
+            emailData.email,
+            config.defaultPwd,
+            (parsedEmail) => this.handleNewEmail(emailData.id, parsedEmail)
+          );
+        } catch (error) {
+          console.error(`❌ Erro ao monitorar ${emailData.email}:`, error);
+        }
+      });
 
-      console.log("✅ Monitoramento de todas as contas iniciado");
+      // Executa todas as verificações em paralelo
+      await Promise.allSettled(promises);
+
+      const duration = Date.now() - startTime;
+      console.log(
+        `✅ [${new Date().toLocaleTimeString()}] Ciclo concluído em ${duration}ms`
+      );
     } catch (error) {
-      console.error("❌ Erro ao iniciar monitoramento geral:", error);
+      console.error("❌ Erro no ciclo de monitoramento:", error);
+    } finally {
+      this.isRunning = false;
     }
   }
 
   /**
-   * Para o monitoramento de um email específico
+   * Inicia o agendamento do monitoramento
+   */
+  startScheduledMonitoring(intervalMinutes: number = 1) {
+    // Para o agendamento anterior se existir
+    this.stopScheduledMonitoring();
+
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    console.log(
+      `⏰ Iniciando monitoramento agendado a cada ${intervalMinutes} minuto(s)`
+    );
+
+    // Executa imediatamente
+    this.runMonitoringCycle();
+
+    // Agenda execuções periódicas
+    this.scheduledInterval = setInterval(() => {
+      this.runMonitoringCycle();
+    }, intervalMs);
+
+    // Agenda limpeza do banco a cada 6 horas
+    setInterval(() => {
+      this.runCleanup();
+    }, 6 * 60 * 60 * 1000);
+  }
+
+  /**
+   * Para o agendamento do monitoramento
+   */
+  stopScheduledMonitoring() {
+    if (this.scheduledInterval) {
+      clearInterval(this.scheduledInterval);
+      this.scheduledInterval = null;
+      console.log("🛑 Agendamento de monitoramento parado");
+    }
+  }
+
+  /**
+   * Executa limpeza de emails antigos
+   */
+  async runCleanup() {
+    try {
+      console.log("🧹 Executando limpeza de emails antigos...");
+      await cleanupOldProcessedEmails(30); // mantém últimos 30 dias
+    } catch (error) {
+      console.error("❌ Erro na limpeza:", error);
+    }
+  }
+
+  /**
+   * MÉTODO LEGADO - Mantido para compatibilidade
+   * @deprecated Use startScheduledMonitoring() em vez disso
+   */
+  async startAllMonitoring() {
+    console.log("⚠️ Método legado chamado. Use startScheduledMonitoring()");
+    await this.runMonitoringCycle();
+  }
+
+  /**
+   * Para o monitoramento de um email específico (para compatibilidade)
    */
   async stopMonitoring(email: string) {
-    this.monitoredEmails.delete(email);
-    console.log(`🛑 Monitoramento parado para ${email}`);
+    console.log(
+      `ℹ️ Solicitação para parar monitoramento de ${email} (será ignorado no próximo ciclo se inativo)`
+    );
   }
 
   /**
    * Retorna a lista de emails sendo monitorados
    */
   getMonitoredEmails(): string[] {
-    return Array.from(this.monitoredEmails);
+    // Retorna emails ativos do banco em vez de cache em memória
+    return [];
   }
 
   /**
    * Para o monitoramento de todos os emails
    */
   async stopAllMonitoring() {
-    this.monitoredEmails.clear();
+    this.stopScheduledMonitoring();
     console.log("🛑 Monitoramento de todas as contas parado");
+  }
+
+  /**
+   * Retorna estatísticas do sistema
+   */
+  async getStats() {
+    try {
+      const totalEmails = await prisma.email.count({
+        where: { isActive: true },
+      });
+
+      const processedToday = await prisma.processedEmail.count({
+        where: {
+          processedAt: {
+            gte: new Date(new Date().setHours(0, 0, 0, 0)),
+          },
+        },
+      });
+
+      return {
+        totalActiveEmails: totalEmails,
+        processedToday,
+        isScheduledRunning: this.scheduledInterval !== null,
+        isCurrentlyRunning: this.isRunning,
+      };
+    } catch (error) {
+      console.error("❌ Erro ao obter estatísticas:", error);
+      return null;
+    }
   }
 }
 

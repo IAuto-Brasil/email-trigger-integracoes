@@ -39,3 +39,20 @@ model ReceivedEmail {
 
   @@map("received_emails")
 }
+
+model ProcessedEmail {
+  id          String   @id @default(cuid())
+  messageId   String   @unique // Message-ID do email
+  uid         Int      // UID do IMAP
+  accountEmail String  // conta que recebeu o email
+  fromEmail   String?  // remetente
+  toEmail     String?  // destinatário
+  subject     String?  // assunto
+  receivedAt  DateTime // data que o email foi recebido
+  processedAt DateTime @default(now()) // data que foi processado
+  
+  // Índices compostos para performance
+  @@index([accountEmail, receivedAt])
+  @@index([messageId])
+  @@unique([uid, accountEmail]) // garante que não processe o mesmo UID da mesma conta 2x
+}

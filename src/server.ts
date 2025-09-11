@@ -198,6 +198,60 @@ app.post(
 
 /**
  * @swagger
+ * /api/monitoring-stats:
+ *   get:
+ *     summary: Retorna estatísticas do monitoramento
+ *     tags:
+ *       - Emails
+ *     responses:
+ *       200:
+ *         description: Estatísticas do sistema
+ */
+app.get("/api/monitoring-stats", async (req: Request, res: Response) => {
+  try {
+    const stats = await emailService.getStats();
+    res.json(stats);
+  } catch (error) {
+    console.error("Erro ao obter estatísticas:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro interno do servidor",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/trigger-monitoring:
+ *   post:
+ *     summary: Dispara um ciclo de monitoramento manualmente
+ *     tags:
+ *       - Emails
+ *     responses:
+ *       200:
+ *         description: Ciclo disparado
+ */
+app.post("/api/trigger-monitoring", async (req: Request, res: Response) => {
+  try {
+    // Executa o ciclo sem aguardar (async)
+    emailService.runMonitoringCycle();
+
+    res.json({
+      success: true,
+      message: "Ciclo de monitoramento disparado",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Erro ao disparar monitoramento:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro interno do servidor",
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/health:
  *   get:
  *     summary: Verifica o status do servidor
@@ -223,12 +277,22 @@ app.post(
  *                   type: integer
  *                   example: 2
  */
-app.get("/api/health", (req: Request, res: Response) => {
-  res.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    monitoredEmails: emailService.getMonitoredEmails().length,
-  });
+app.get("/api/health", async (req: Request, res: Response) => {
+  try {
+    const stats = await emailService.getStats();
+
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      monitoringStats: stats,
+    });
+  } catch (error) {
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      monitoringStats: null,
+    });
+  }
 });
 
 // Middleware de tratamento de erros
@@ -252,7 +316,7 @@ async function startServer() {
   try {
     // Inicia o monitoramento de todos os emails existentes
     console.log("🔄 Iniciando monitoramento dos emails existentes...");
-    await emailService.startAllMonitoring();
+    emailService.startScheduledMonitoring(2);
 
     // Inicia o servidor
     app.listen(config.server.port, () => {
