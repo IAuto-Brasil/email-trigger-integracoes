@@ -138,7 +138,7 @@ export default async function processEmailWithGPT(
 
   // 1ª tentativa
   let resp = await client.chat.completions.create({
-    model: "gpt-3.5-turbo",
+    model: "gpt-4-turbo",
     temperature: 0,
     messages: [
       { role: "system", content: SYS_PROMPT },
