@@ -316,7 +316,9 @@ async function startServer() {
   try {
     // Inicia o monitoramento de todos os emails existentes
     console.log("🔄 Iniciando monitoramento dos emails existentes...");
-    emailService.startScheduledMonitoring(2);
+    emailService.startScheduledMonitoring(
+      Number(process.env.SCHEDULE_TIME_IN_MINUTES)
+    );
 
     // Inicia o servidor
     app.listen(config.server.port, () => {
