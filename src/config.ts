@@ -21,6 +21,6 @@ export const config = {
     user: process.env.POSTGRES_USER!,
     password: process.env.POSTGRES_PASSWORD!,
     database: process.env.POSTGRES_DB!,
-    url: process.env.POSTGRES_URL!,
+    url: process.env.DATABASE_URL!,
   },
 };
