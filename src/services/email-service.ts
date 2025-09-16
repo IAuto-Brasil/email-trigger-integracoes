@@ -284,7 +284,7 @@ class EmailService {
           statsDetails
         );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro no ciclo de monitoramento:", error);
 
       await discordNotification.sendNotification(
