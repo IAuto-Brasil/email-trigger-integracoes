@@ -163,19 +163,166 @@ class DiscordNotificationService {
     leadData: any,
     error: any
   ): Promise<void> {
+    // Extrai informações detalhadas do erro Axios
+    const errorDetails = this.extractAxiosErrorDetails(error);
+
+    const fields: Record<string, any> = {
+      Lead: leadData?.leadName || "N/A",
+      "E-mail Lead": leadData?.leadEmail || "N/A",
+      Telefone: leadData?.leadPhone || "N/A",
+      Portal: leadData?.portal || "N/A",
+      Veículo: leadData?.vehicle || "N/A",
+      Valor: leadData?.valueRaw || leadData?.value || "N/A",
+      "Status HTTP": errorDetails.status || "N/A",
+      "Erro Principal": errorDetails.mainError,
+      Timestamp: new Date().toLocaleString("pt-BR"),
+    };
+
+    // Adiciona detalhes específicos se disponíveis
+    if (errorDetails.serverMessage) {
+      fields["Resposta do Servidor"] = errorDetails.serverMessage;
+    }
+
+    if (errorDetails.whatsappError) {
+      fields["Erro WhatsApp"] = errorDetails.whatsappError;
+    }
+
+    if (errorDetails.evolutionError) {
+      fields["Detalhes Evolution"] = errorDetails.evolutionError;
+    }
+
     await this.sendNotification(
       NotificationType.ERROR,
       "Erro de Comunicação com Servidor",
-      `Falha ao enviar lead para IAuto Brasil`,
+      errorDetails.description,
+      fields
+    );
+  }
+
+  /**
+   * Notifica problemas específicos do WhatsApp/Evolution
+   */
+  async notifyWhatsAppError(
+    leadData: any,
+    phoneNumber: string,
+    evolutionError: string
+  ): Promise<void> {
+    await this.sendNotification(
+      NotificationType.WARNING,
+      "Problema com Número WhatsApp",
+      `Número ${phoneNumber} não foi aceito pelo WhatsApp`,
       {
         Lead: leadData?.leadName || "N/A",
         "E-mail Lead": leadData?.leadEmail || "N/A",
-        Telefone: leadData?.leadPhone || "N/A",
+        "Telefone Original": leadData?.leadPhone || "N/A",
+        "Telefone Processado": phoneNumber,
         Portal: leadData?.portal || "N/A",
-        Erro: error?.message || String(error),
+        "Erro Evolution": evolutionError,
+        Status: "Número não existe no WhatsApp",
         Timestamp: new Date().toLocaleString("pt-BR"),
       }
     );
+  }
+
+  /**
+   * Extrai informações detalhadas de erros Axios
+   */
+  private extractAxiosErrorDetails(error: any): {
+    status?: number;
+    mainError: string;
+    description: string;
+    serverMessage?: string;
+    whatsappError?: string;
+    evolutionError?: string;
+  } {
+    const details = {
+      mainError: error?.message || String(error),
+      description: "Falha ao enviar lead para IAuto Brasil",
+    };
+
+    // Se for erro Axios
+    if (error?.response) {
+      const response = error.response;
+      details.status = response.status;
+
+      // Resposta do servidor
+      if (response.data) {
+        const serverData = response.data;
+
+        if (serverData.message) {
+          details.serverMessage = serverData.message;
+
+          // Analisa mensagens específicas do WhatsApp/Evolution
+          if (serverData.message.includes("WhatsApp")) {
+            details.description = "Erro no envio via WhatsApp";
+
+            // Extrai detalhes do Evolution
+            const evolutionMatch = serverData.message.match(/Evolution: (.+)$/);
+            if (evolutionMatch) {
+              details.evolutionError = evolutionMatch[1];
+
+              // Tenta parsear JSON do erro da Evolution
+              try {
+                const evolutionJson = JSON.parse(
+                  evolutionMatch[1]
+                    .replace(/^\d+\s+\w+\s+\w+:\s+"/, "")
+                    .replace(/"$/, "")
+                );
+                if (evolutionJson.response?.message) {
+                  const messages = evolutionJson.response.message;
+                  if (Array.isArray(messages)) {
+                    details.whatsappError = messages
+                      .map(
+                        (m) =>
+                          `Número ${m.number}: ${
+                            m.exists ? "existe" : "não existe"
+                          } (JID: ${m.jid})`
+                      )
+                      .join(", ");
+                  }
+                }
+              } catch (e) {
+                // Se não conseguir parsear, mantém a string original
+              }
+            }
+          }
+        }
+
+        if (serverData.value === "error") {
+          details.description = "Servidor retornou erro";
+        }
+      }
+
+      // Descrições baseadas no status HTTP
+      switch (response.status) {
+        case 400:
+          details.description = "Requisição inválida (400 Bad Request)";
+          break;
+        case 401:
+          details.description = "Não autorizado (401 Unauthorized)";
+          break;
+        case 403:
+          details.description = "Acesso negado (403 Forbidden)";
+          break;
+        case 404:
+          details.description = "Endpoint não encontrado (404 Not Found)";
+          break;
+        case 429:
+          details.description = "Muitas requisições (429 Rate Limited)";
+          break;
+        case 500:
+          details.description = "Erro interno do servidor (500)";
+          break;
+        case 502:
+          details.description = "Gateway inválido (502 Bad Gateway)";
+          break;
+        case 503:
+          details.description = "Serviço indisponível (503)";
+          break;
+      }
+    }
+
+    return details;
   }
 
   /**

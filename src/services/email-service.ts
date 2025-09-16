@@ -8,7 +8,7 @@ import {
   ParsedEmail,
   cleanupOldProcessedEmails,
 } from "./email-monitor";
-import { discordNotification } from "./discord-notification";
+import { discordNotification, NotificationType } from "./discord-notification";
 
 class EmailService {
   private scheduledInterval: NodeJS.Timeout | null = null;
@@ -92,7 +92,6 @@ class EmailService {
       }
 
       let phone = result.leadPhone || "";
-
       phone = phone.replace(/\D/g, "");
 
       if (!phone.startsWith("55")) {
@@ -102,8 +101,8 @@ class EmailService {
       console.log(result);
 
       if (result) {
-        await axios
-          .post(
+        try {
+          const response = await axios.post(
             "https://api.sistema.iautobrasil.com.br/server-iauto/api/receive-message-portals",
             {
               leadName: result.leadName,
@@ -116,17 +115,71 @@ class EmailService {
               valueRaw: result.valueRaw,
               value: result.value,
             }
-          )
-          .then((res) => {
-            const cleanedPhone = result.leadPhone.replace(/\D/g, "");
-            console.log("Lead enviado para IAuto Brasil", cleanedPhone);
-          });
+          );
+
+          // Log de sucesso
+          const cleanedPhone = result.leadPhone.replace(/\D/g, "");
+          console.log("Lead enviado para IAuto Brasil", cleanedPhone);
+
+          if (result.value && parseInt(result.value) > 5000000) {
+            // Leads > R$ 50.000
+            await discordNotification.sendNotification(
+              NotificationType.SUCCESS,
+              "Lead de Alto Valor Processado",
+              `Lead de ${result.leadName} processado com sucesso`,
+              {
+                Valor: result.valueRaw,
+                Veículo: result.vehicle,
+                Portal: result.portal,
+                Telefone: phone,
+              }
+            );
+          }
+        } catch (httpError: any) {
+          // Log original mantido
+          console.error("❌ Erro ao se comunicar com o servidor:", httpError);
+
+          // Análise detalhada do erro
+          if (httpError?.response?.status === 400) {
+            const serverMessage = httpError.response.data?.message || "";
+
+            // Casos específicos de erro do WhatsApp
+            if (
+              serverMessage.includes("WhatsApp") &&
+              serverMessage.includes('exists":false')
+            ) {
+              // Notificação específica para problemas de WhatsApp
+              await discordNotification.notifyWhatsAppError(
+                result,
+                phone,
+                serverMessage
+              );
+            } else {
+              // Outros erros 400
+              await discordNotification.notifyServerCommunicationError(
+                result,
+                httpError
+              );
+            }
+          } else {
+            // Outros tipos de erro HTTP
+            await discordNotification.notifyServerCommunicationError(
+              result,
+              httpError
+            );
+          }
+
+          // Re-throw para manter o comportamento original se necessário
+          // throw httpError;
+        }
       }
     } catch (error) {
-      console.error("❌ Erro ao se comunicar com o servidor:", error);
+      console.error("❌ Erro geral no processamento:", error);
 
-      await discordNotification.notifyServerCommunicationError(
-        parsedEmail,
+      // Para erros não relacionados ao HTTP (parse do email, etc.)
+      await discordNotification.notifyEmailProcessingError(
+        parsedEmail.to || "unknown",
+        parsedEmail.messageId,
         error
       );
     }
@@ -147,6 +200,8 @@ class EmailService {
     let totalNewEmails = 0;
     let successfullyProcessed = 0;
     let errors = 0;
+    let whatsappErrors = 0;
+    let serverErrors = 0;
 
     try {
       const allEmails = await prisma.email.findMany({
@@ -169,8 +224,19 @@ class EmailService {
               try {
                 await this.handleNewEmail(emailData.id, parsedEmail);
                 successfullyProcessed++;
-              } catch (error) {
+              } catch (error: any) {
                 errors++;
+
+                // Categoriza os erros
+                if (
+                  error?.response?.status === 400 &&
+                  error?.response?.data?.message?.includes("WhatsApp")
+                ) {
+                  whatsappErrors++;
+                } else if (error?.response) {
+                  serverErrors++;
+                }
+
                 throw error;
               }
             }
@@ -188,18 +254,49 @@ class EmailService {
         `✅ [${new Date().toLocaleTimeString()}] Ciclo concluído em ${duration}ms`
       );
 
-      // NOTIFICAÇÃO DE ESTATÍSTICAS (apenas se houver atividade)
+      // Notificação de estatísticas detalhadas (apenas se houver atividade)
       if (totalNewEmails > 0 || errors > 0) {
-        await discordNotification.notifyMonitoringStats({
-          totalEmails: allEmails.length,
-          newEmailsFound: totalNewEmails,
-          processedSuccessfully: successfullyProcessed,
-          errors,
-          duration,
-        });
+        const statsDetails = {
+          "Contas Monitoradas": String(allEmails.length),
+          "E-mails Novos": String(totalNewEmails),
+          "Processados com Sucesso": String(successfullyProcessed),
+          "Erros Total": String(errors),
+          "Erros WhatsApp": String(whatsappErrors),
+          "Erros Servidor": String(serverErrors),
+          Duração: `${duration}ms`,
+          "Taxa de Sucesso":
+            totalNewEmails > 0
+              ? `${Math.round((successfullyProcessed / totalNewEmails) * 100)}%`
+              : "N/A",
+        };
+
+        const notificationType =
+          errors > successfullyProcessed
+            ? NotificationType.WARNING
+            : errors > 0
+            ? NotificationType.INFO
+            : NotificationType.SUCCESS;
+
+        await discordNotification.sendNotification(
+          notificationType,
+          "📊 Relatório do Ciclo de Monitoramento",
+          `Ciclo de verificação concluído`,
+          statsDetails
+        );
       }
     } catch (error) {
       console.error("❌ Erro no ciclo de monitoramento:", error);
+
+      await discordNotification.sendNotification(
+        NotificationType.ERROR,
+        "💥 Erro Crítico no Sistema",
+        "Falha geral no ciclo de monitoramento",
+        {
+          Erro: error?.message || String(error),
+          Timestamp: new Date().toLocaleString("pt-BR"),
+        }
+      );
+
       errors++;
     } finally {
       this.isRunning = false;
@@ -218,9 +315,9 @@ class EmailService {
       `⏰ Iniciando monitoramento agendado a cada ${intervalMinutes} minuto(s)`
     );
 
-    this.runMonitoringCycle();
-
     discordNotification.notifySystemStart(intervalMinutes);
+
+    this.runMonitoringCycle();
 
     this.scheduledInterval = setInterval(() => {
       this.runMonitoringCycle();
