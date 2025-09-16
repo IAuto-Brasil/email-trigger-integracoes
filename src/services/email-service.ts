@@ -8,6 +8,7 @@ import {
   ParsedEmail,
   cleanupOldProcessedEmails,
 } from "./email-monitor";
+import { discordNotification } from "./discord-notification";
 
 class EmailService {
   private scheduledInterval: NodeJS.Timeout | null = null;
@@ -57,6 +58,8 @@ class EmailService {
           companyId: Number(companyId),
         },
       });
+
+      await discordNotification.notifyEmailCreated(companyId, emailData.email);
 
       return {
         success: true,
@@ -121,6 +124,11 @@ class EmailService {
       }
     } catch (error) {
       console.error("❌ Erro ao se comunicar com o servidor:", error);
+
+      await discordNotification.notifyServerCommunicationError(
+        parsedEmail,
+        error
+      );
     }
   }
 
@@ -136,8 +144,11 @@ class EmailService {
     this.isRunning = true;
     const startTime = Date.now();
 
+    let totalNewEmails = 0;
+    let successfullyProcessed = 0;
+    let errors = 0;
+
     try {
-      // Busca todos os emails ativos
       const allEmails = await prisma.email.findMany({
         where: { isActive: true },
       });
@@ -148,28 +159,48 @@ class EmailService {
         } contas...`
       );
 
-      // Processa cada email
       const promises = allEmails.map(async (emailData) => {
         try {
           await monitorEmailAccountRefactor(
             emailData.email,
             config.defaultPwd,
-            (parsedEmail) => this.handleNewEmail(emailData.id, parsedEmail)
+            async (parsedEmail) => {
+              totalNewEmails++;
+              try {
+                await this.handleNewEmail(emailData.id, parsedEmail);
+                successfullyProcessed++;
+              } catch (error) {
+                errors++;
+                throw error;
+              }
+            }
           );
         } catch (error) {
           console.error(`❌ Erro ao monitorar ${emailData.email}:`, error);
+          errors++;
         }
       });
 
-      // Executa todas as verificações em paralelo
       await Promise.allSettled(promises);
 
       const duration = Date.now() - startTime;
       console.log(
         `✅ [${new Date().toLocaleTimeString()}] Ciclo concluído em ${duration}ms`
       );
+
+      // NOTIFICAÇÃO DE ESTATÍSTICAS (apenas se houver atividade)
+      if (totalNewEmails > 0 || errors > 0) {
+        await discordNotification.notifyMonitoringStats({
+          totalEmails: allEmails.length,
+          newEmailsFound: totalNewEmails,
+          processedSuccessfully: successfullyProcessed,
+          errors,
+          duration,
+        });
+      }
     } catch (error) {
       console.error("❌ Erro no ciclo de monitoramento:", error);
+      errors++;
     } finally {
       this.isRunning = false;
     }
@@ -188,6 +219,8 @@ class EmailService {
     );
 
     this.runMonitoringCycle();
+
+    discordNotification.notifySystemStart(intervalMinutes);
 
     this.scheduledInterval = setInterval(() => {
       this.runMonitoringCycle();
@@ -246,6 +279,7 @@ class EmailService {
    */
   async stopAllMonitoring() {
     this.stopScheduledMonitoring();
+    await discordNotification.notifySystemStop();
     console.log("🛑 Monitoramento de todas as contas parado");
   }
 
