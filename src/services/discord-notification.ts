@@ -235,7 +235,14 @@ class DiscordNotificationService {
     whatsappError?: string;
     evolutionError?: string;
   } {
-    const details = {
+    const details: {
+      status?: number;
+      mainError: string;
+      description: string;
+      serverMessage?: string;
+      whatsappError?: string;
+      evolutionError?: string;
+    } = {
       mainError: error?.message || String(error),
       description: "Falha ao enviar lead para IAuto Brasil",
     };
