@@ -132,6 +132,7 @@ class EmailService {
                 Veículo: result.vehicle,
                 Portal: result.portal,
                 Telefone: phone,
+                Empresa: result.to.split("@")[0],
               }
             );
           }
@@ -170,7 +171,7 @@ class EmailService {
           }
 
           // Re-throw para manter o comportamento original se necessário
-          // throw httpError;
+          throw httpError;
         }
       }
     } catch (error) {
@@ -182,6 +183,9 @@ class EmailService {
         parsedEmail.messageId,
         error
       );
+
+      // Re-throw para que o email-monitor saiba que houve erro
+      throw error;
     }
   }
 

@@ -124,7 +124,7 @@ export async function monitorEmailAccountRefactor(
         // Chama o callback com o email
         await onNewMail(emailData);
 
-        // Salva no banco que foi processado
+        // Só salva no banco como processado se não houve erro
         await prisma.processedEmail.create({
           data: {
             messageId: emailData.messageId,
@@ -143,6 +143,10 @@ export async function monitorEmailAccountRefactor(
           `❌ Erro ao processar email ${emailData.messageId}:`,
           error
         );
+
+        // Email NÃO é marcado como processado quando há erro
+        // Será reprocessado no próximo ciclo
+        console.log(`⚠️ Email ${emailData.messageId} será reprocessado no próximo ciclo devido ao erro`);
 
         await discordNotification.notifyEmailProcessingError(
           email,
