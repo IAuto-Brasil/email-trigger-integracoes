@@ -320,15 +320,6 @@ async function startServer() {
       Number(process.env.SCHEDULE_TIME_IN_MINUTES)
     );
 
-    // crie manualmente dentro do banco de dados um email para 135@iautobrasil.com
-    await prisma.email.create({
-      data: {
-        email: "135@iautobrasil.com",
-        companyId: 135,
-        isActive: true,
-      },
-    });
-
     // Inicia o servidor
     app.listen(config.server.port, () => {
       console.log(
