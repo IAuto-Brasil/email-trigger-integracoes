@@ -103,7 +103,7 @@ class EmailService {
       if (result) {
         try {
           const response = await axios.post(
-            "https://api.homologacao.iautobrasil.com.br/server-iauto/api/receive-message-portals",
+            "https://api.sistema.iautobrasil.com.br/server-iauto/api/receive-message-portals",
             {
               leadName: result.leadName,
               leadEmail: result.leadEmail,
