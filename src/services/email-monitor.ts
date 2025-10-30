@@ -1,6 +1,7 @@
 import { ImapFlow, FetchMessageObject } from "imapflow";
 import { simpleParser } from "mailparser";
 import { prisma } from "../../prisma";
+import { discordNotification } from "./discord-notification";
 
 export interface ParsedEmail {
   messageId: string;
@@ -142,10 +143,17 @@ export async function monitorEmailAccountRefactor(
           `❌ Erro ao processar email ${emailData.messageId}:`,
           error
         );
+
+        await discordNotification.notifyEmailProcessingError(
+          email,
+          emailData.messageId,
+          error
+        );
       }
     }
   } catch (error) {
     console.error(`❌ Erro ao conectar ${email}:`, error);
+    await discordNotification.notifyEmailConnectionError(email, error);
   } finally {
     if (client) {
       try {
