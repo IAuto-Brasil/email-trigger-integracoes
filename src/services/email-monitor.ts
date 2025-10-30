@@ -73,7 +73,7 @@ export async function monitorEmailAccountRefactor(
     }
 
     console.log(
-      `📨 ${email}: Encontrados ${allEmails.length} emails na última hora`
+      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 24 horas`
     );
 
     if (allEmails.length === 0) {
