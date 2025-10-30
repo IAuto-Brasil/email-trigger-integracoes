@@ -44,11 +44,11 @@ export async function monitorEmailAccountRefactor(
     await client.connect();
     await client.mailboxOpen("INBOX");
 
-    // Busca emails da última hora
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    // Busca emails das últimas 24 horas
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const messages = client.fetch(
-      { since: oneHourAgo },
+      { since: twentyFourHoursAgo },
       {
         envelope: true,
         source: true,
