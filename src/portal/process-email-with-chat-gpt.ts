@@ -29,7 +29,7 @@ TAREFA: Ler o conteúdo (headers, subject, texto e HTML) e retornar EXATAMENTE u
   {
     "leadName": "...",    // Separe o nome do lead de um suposto nome comercial, ex: João Car Shop > João, ou Carros do Fernando Lima > Fernando Lima
     "leadEmail": "...",   // Dentro do HTML, busque o email do lead, não do remetente ou destinatário
-    "leadPhone": "...",   // Formate como DDI DDD e número juntos, ex.: "5521970042051" sem espacos
+    "leadPhone": "...",   // Formate como DDI DDD e número juntos, ex.: "5521970042051" sem espacos, caso nao comece com 55, adicione o 55 na frente.
     "vehicle": "...",     // Nome completo do veículo (marca, modelo, versão, ano quando houver)
     "from": "...",        // remetente (email)
     "to": "...",          // destinatário (email) sempre utilize o destinário que contenha o domain @iautobrasil.com, ex: 15@iautobrasil.com, 76@iautobrasil.com e etc... {id}@iautobrasil.com
@@ -46,7 +46,7 @@ REGRAS:
 - "valueRaw": deve começar por "R$ " e usar separador BR (ponto para milhar e vírgula para centavos), ex.: "R$ 56.900" ou "R$ 108.900".
 - "portal": use uma das pistas (domínio do remetente, assinatura, logos) para inferir. Se não der, use a dica recebida (portalHint).
 - "from" e "to": devem ser e-mails; se houver múltiplos "to", escolha o que conter o domain @iautobrasil.com correspondente ao id  da loja.
-- "leadPhone": mantenha apenas dígitos  Ex.: "(21) 97004-2051" -> "21970042051".
+- "leadPhone": mantenha apenas dígitos  Ex.: "(21) 97004-2051" -> "5521970042051".
 - NUNCA mude os nomes dos campos.
 
 IMPORTANTE:
