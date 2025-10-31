@@ -139,7 +139,7 @@ export default async function processEmailWithGPT(
   // 1ª tentativa
   let resp = await client.chat.completions.create({
     model: "gpt-5-mini-2025-08-07",
-    temperature: 0,
+    temperature: 1.0,
     messages: [
       { role: "system", content: SYS_PROMPT },
       { role: "user", content: userPrompt },
