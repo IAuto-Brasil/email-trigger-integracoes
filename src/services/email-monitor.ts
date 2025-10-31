@@ -45,11 +45,11 @@ export async function monitorEmailAccountRefactor(
     await client.connect();
     await client.mailboxOpen("INBOX");
 
-    // Busca emails das últimas 24 horas
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // Busca emails das últimas 1 hora
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
     const messages = client.fetch(
-      { since: twentyFourHoursAgo },
+      { since: oneHourAgo },
       {
         envelope: true,
         source: true,
@@ -73,7 +73,7 @@ export async function monitorEmailAccountRefactor(
     }
 
     console.log(
-      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 24 horas`
+      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 1 hora`
     );
 
     if (allEmails.length === 0) {
@@ -146,7 +146,9 @@ export async function monitorEmailAccountRefactor(
 
         // Email NÃO é marcado como processado quando há erro
         // Será reprocessado no próximo ciclo
-        console.log(`⚠️ Email ${emailData.messageId} será reprocessado no próximo ciclo devido ao erro`);
+        console.log(
+          `⚠️ Email ${emailData.messageId} será reprocessado no próximo ciclo devido ao erro`
+        );
 
         await discordNotification.notifyEmailProcessingError(
           email,
