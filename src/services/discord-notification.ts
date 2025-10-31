@@ -161,7 +161,8 @@ class DiscordNotificationService {
    */
   async notifyServerCommunicationError(
     leadData: any,
-    error: any
+    error: any,
+    companyId: string
   ): Promise<void> {
     // Extrai informações detalhadas do erro Axios
     const errorDetails = this.extractAxiosErrorDetails(error);
@@ -176,6 +177,7 @@ class DiscordNotificationService {
       "Status HTTP": errorDetails.status || "N/A",
       "Erro Principal": errorDetails.mainError,
       Timestamp: new Date().toLocaleString("pt-BR"),
+      Empresa: companyId || "N/A",
     };
 
     // Adiciona detalhes específicos se disponíveis

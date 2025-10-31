@@ -159,14 +159,16 @@ class EmailService {
               // Outros erros 400
               await discordNotification.notifyServerCommunicationError(
                 result,
-                httpError
+                httpError,
+                result.to.split("@")[0]
               );
             }
           } else {
             // Outros tipos de erro HTTP
             await discordNotification.notifyServerCommunicationError(
               result,
-              httpError
+              httpError,
+              result.to.split("@")[0]
             );
           }
 
