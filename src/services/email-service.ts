@@ -140,23 +140,46 @@ class EmailService {
           // Log original mantido
           console.error("❌ Erro ao se comunicar com o servidor:", httpError);
 
+          let isPermanentError = false;
+
           // Análise detalhada do erro
           if (httpError?.response?.status === 400) {
             const serverMessage = httpError.response.data?.message || "";
 
-            // Casos específicos de erro do WhatsApp
+            // Casos específicos de erro do WhatsApp - erros permanentes
             if (
               serverMessage.includes("WhatsApp") &&
               serverMessage.includes('exists":false')
             ) {
+              // Erro permanente: número não existe no WhatsApp
+              isPermanentError = true;
+              console.log(`⚠️ Erro permanente detectado - Número ${phone} não existe no WhatsApp. Email será marcado como processado para evitar reprocessamento.`);
+              
               // Notificação específica para problemas de WhatsApp
               await discordNotification.notifyWhatsAppError(
                 result,
                 phone,
                 serverMessage
               );
-            } else {
-              // Outros erros 400
+            } 
+            // Outros erros permanentes relacionados a números inválidos
+            else if (
+              serverMessage.includes("número inválido") ||
+              serverMessage.includes("invalid number") ||
+              serverMessage.includes("formato inválido") ||
+              (phone && (phone.length < 8 || phone.length > 15)) // Números claramente inválidos
+            ) {
+              isPermanentError = true;
+              console.log(`⚠️ Erro permanente detectado - Número ${phone} é inválido. Email será marcado como processado para evitar reprocessamento.`);
+              
+              await discordNotification.notifyServerCommunicationError(
+                result,
+                httpError,
+                result.to.split("@")[0]
+              );
+            }
+            else {
+              // Outros erros 400 - podem ser temporários
               await discordNotification.notifyServerCommunicationError(
                 result,
                 httpError,
@@ -172,8 +195,11 @@ class EmailService {
             );
           }
 
-          // Re-throw para manter o comportamento original se necessário
-          throw httpError;
+          // Só re-lança o erro se não for um erro permanente
+          // Erros permanentes permitem que o email seja marcado como processado
+          if (!isPermanentError) {
+            throw httpError;
+          }
         }
       }
     } catch (error) {
