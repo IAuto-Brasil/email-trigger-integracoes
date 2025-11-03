@@ -1,3 +1,5 @@
+// arquivo: monitorEmailAccountRefactor
+
 import { ImapFlow, FetchMessageObject } from "imapflow";
 import { simpleParser } from "mailparser";
 import { prisma } from "../../prisma";
@@ -19,6 +21,9 @@ export interface ParsedEmail {
     content: Buffer;
   }[];
 }
+
+const FAILURE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutos
+const recentFailures = new Map<string, number>();
 
 export async function monitorEmailAccountRefactor(
   email: string,
@@ -45,11 +50,11 @@ export async function monitorEmailAccountRefactor(
     await client.connect();
     await client.mailboxOpen("INBOX");
 
-    // Busca emails das últimas 1 hora
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    // Busca emails das últimas 24 horas
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const messages = client.fetch(
-      { since: oneHourAgo },
+      { since: twentyFourHoursAgo },
       {
         envelope: true,
         source: true,
@@ -73,7 +78,7 @@ export async function monitorEmailAccountRefactor(
     }
 
     console.log(
-      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 1 hora`
+      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 24 horas`
     );
 
     if (allEmails.length === 0) {
@@ -109,12 +114,16 @@ export async function monitorEmailAccountRefactor(
     );
     const processedUIDs = new Set(processedEmails.map((e) => e.uid));
 
-    // Filtra apenas emails não processados
-    const newEmails = allEmails.filter(
-      (email) =>
-        !processedMessageIds.has(email.messageId) &&
-        !processedUIDs.has(email.uid)
-    );
+    // Filtra apenas emails não processados e fora do cooldown de falha recente
+    const newEmails = allEmails.filter((mail) => {
+      const hasBeenProcessed =
+        processedMessageIds.has(mail.messageId) || processedUIDs.has(mail.uid);
+      const lastFailAt = recentFailures.get(mail.messageId);
+      const withinCooldown =
+        lastFailAt ? Date.now() - lastFailAt < FAILURE_COOLDOWN_MS : false;
+
+      return !hasBeenProcessed && !withinCooldown;
+    });
 
     console.log(`🆕 ${email}: ${newEmails.length} emails novos para processar`);
 
@@ -144,10 +153,12 @@ export async function monitorEmailAccountRefactor(
           error
         );
 
-        // Email NÃO é marcado como processado quando há erro
-        // Será reprocessado no próximo ciclo
+        // Marca falha recente para aplicar cooldown
+        recentFailures.set(emailData.messageId, Date.now());
         console.log(
-          `⚠️ Email ${emailData.messageId} será reprocessado no próximo ciclo devido ao erro`
+          `⏳ Cooldown aplicado para ${emailData.messageId} por ${
+            FAILURE_COOLDOWN_MS / (60 * 1000)
+          } minutos`
         );
 
         await discordNotification.notifyEmailProcessingError(
