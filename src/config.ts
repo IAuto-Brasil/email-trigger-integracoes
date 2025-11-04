@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 export const config = {
   cpanel: {
     host: process.env.CPANEL_HOST!,
