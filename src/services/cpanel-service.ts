@@ -30,7 +30,6 @@ export async function createEmailAccount(
     });
 
     if (response.data?.errors && response.data.errors.length > 0) {
-      // NOTIFICAÇÃO DE ERRO
       await discordNotification.notifyCpanelError(
         "Criar E-mail",
         companyId,

@@ -346,5 +346,3 @@ process.on("SIGTERM", () => {
 
 // Inicia o servidor
 startServer();
-
-export default app;

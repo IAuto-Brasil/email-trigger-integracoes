@@ -56,3 +56,10 @@ model ProcessedEmail {
   @@index([messageId])
   @@unique([uid, accountEmail]) // garante que não processe o mesmo UID da mesma conta 2x
 }
+
+model ParsedEmailCache {
+  id         Int      @id @default(autoincrement())
+  messageId  String   @unique
+  payload    Json
+  createdAt  DateTime @default(now())
+}

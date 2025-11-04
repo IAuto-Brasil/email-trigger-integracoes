@@ -127,7 +127,6 @@ export async function monitorEmailAccountRefactor(
 
     console.log(`🆕 ${email}: ${newEmails.length} emails novos para processar`);
 
-    // Processa apenas emails novos
     for (const emailData of newEmails) {
       try {
         // Chama o callback com o email

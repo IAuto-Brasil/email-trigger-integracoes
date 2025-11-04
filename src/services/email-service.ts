@@ -9,6 +9,8 @@ import {
   cleanupOldProcessedEmails,
 } from "./email-monitor";
 import { discordNotification, NotificationType } from "./discord-notification";
+import { normalizePhone } from "../utils/phone";
+import { isPermanentWhatsAppError } from "../utils/errors";
 
 class EmailService {
   private scheduledInterval: NodeJS.Timeout | null = null;
@@ -84,30 +86,78 @@ class EmailService {
    * Processa um novo email recebido
    */
   private async handleNewEmail(emailId: number, parsedEmail: ParsedEmail) {
+    // Tipos e guardas para o payload do GPT/cache
+    type LeadPayload = {
+      leadName: string;
+      leadEmail?: string | null;
+      leadPhone?: string | null;
+      vehicle?: string | null;
+      from: string;
+      to: string;
+      portal: string;
+      valueRaw?: string | null;
+      value?: string | null;
+    };
+    const isLeadPayload = (data: any): data is LeadPayload => {
+      return (
+        data &&
+        typeof data === "object" &&
+        typeof data.leadName === "string" &&
+        typeof data.to === "string" &&
+        typeof data.from === "string" &&
+        typeof data.portal === "string"
+      );
+    };
+
     try {
-      const result = await processEmail(parsedEmail);
+      // 1) Busca no cache primeiro, com validação de tipo
+      const cached = await prisma.parsedEmailCache.findUnique({
+        where: { messageId: parsedEmail.messageId },
+      });
 
+      let result: LeadPayload | null = null;
+      if (cached?.payload && isLeadPayload(cached.payload)) {
+        result = cached.payload;
+      }
+
+      // 2) Se não tem cache válido, processa com GPT e salva
       if (!result) {
-        return;
+        const processed = await processEmail(parsedEmail);
+        if (!processed || !isLeadPayload(processed)) {
+          return;
+        }
+
+        result = processed;
+
+        await prisma.parsedEmailCache.upsert({
+          where: { messageId: parsedEmail.messageId },
+          update: { payload: result },
+          create: { messageId: parsedEmail.messageId, payload: result },
+        });
       }
 
-      let phone = result.leadPhone || "";
-      phone = phone.replace(/\D/g, "");
-
-      if (!phone.startsWith("55")) {
-        phone = "55" + phone;
-      }
+      const normalizedPhone = normalizePhone(result.leadPhone || null);
 
       console.log(result);
 
       if (result) {
         try {
+          if (!normalizedPhone) {
+            await discordNotification.notifyWhatsAppError(
+              result,
+              result.leadPhone || "",
+              "Número inválido (normalização falhou)"
+            );
+            // Não relança → email será marcado como processado
+            return;
+          }
+
           const response = await axios.post(
             "https://api.sistema.iautobrasil.com.br/server-iauto/api/receive-message-portals",
             {
               leadName: result.leadName,
               leadEmail: result.leadEmail,
-              leadPhone: phone,
+              leadPhone: normalizedPhone,
               vehicle: result.vehicle,
               from: result.from,
               to: result.to,
@@ -117,12 +167,9 @@ class EmailService {
             }
           );
 
-          // Log de sucesso
-          const cleanedPhone = result.leadPhone.replace(/\D/g, "");
-          console.log("Lead enviado para IAuto Brasil", cleanedPhone);
+          console.log("Lead enviado para IAuto Brasil", normalizedPhone);
 
           if (result.value && parseInt(result.value) > 5000000) {
-            // Leads > R$ 50.000
             await discordNotification.sendNotification(
               NotificationType.SUCCESS,
               "Lead de Alto Valor Processado",
@@ -131,55 +178,34 @@ class EmailService {
                 Valor: result.valueRaw,
                 Veículo: result.vehicle,
                 Portal: result.portal,
-                Telefone: phone,
-                Empresa: result.to.split("@")[0],
+                Telefone: normalizedPhone,
               }
             );
           }
         } catch (httpError: any) {
-          // Log original mantido
-          console.error("❌ Erro ao se comunicar com o servidor:", httpError);
+          console.error("❌ Em comunicação com servidor:", httpError);
 
           let isPermanentError = false;
 
-          // Análise detalhada do erro
           if (httpError?.response?.status === 400) {
             const serverMessage = httpError.response.data?.message || "";
 
-            // Casos específicos de erro do WhatsApp - erros permanentes
             if (
-              serverMessage.includes("WhatsApp") &&
-              serverMessage.includes('exists":false')
+              isPermanentWhatsAppError(httpError, serverMessage, normalizedPhone)
             ) {
-              // Erro permanente: número não existe no WhatsApp
               isPermanentError = true;
-              console.log(`⚠️ Erro permanente detectado - Número ${phone} não existe no WhatsApp. Email será marcado como processado para evitar reprocessamento.`);
-              
-              // Notificação específica para problemas de WhatsApp
+              console.log(
+                `⚠️ Erro permanente - Telefone ${
+                  normalizedPhone || result.leadPhone || "N/A"
+                }. Marcar como processado para evitar reprocessamento.`
+              );
+
               await discordNotification.notifyWhatsAppError(
                 result,
-                phone,
-                serverMessage
+                normalizedPhone || result.leadPhone || "",
+                serverMessage || "Número inválido ou inexistente"
               );
-            } 
-            // Outros erros permanentes relacionados a números inválidos
-            else if (
-              serverMessage.includes("número inválido") ||
-              serverMessage.includes("invalid number") ||
-              serverMessage.includes("formato inválido") ||
-              (phone && (phone.length < 8 || phone.length > 15)) // Números claramente inválidos
-            ) {
-              isPermanentError = true;
-              console.log(`⚠️ Erro permanente detectado - Número ${phone} é inválido. Email será marcado como processado para evitar reprocessamento.`);
-              
-              await discordNotification.notifyServerCommunicationError(
-                result,
-                httpError,
-                result.to.split("@")[0]
-              );
-            }
-            else {
-              // Outros erros 400 - podem ser temporários
+            } else {
               await discordNotification.notifyServerCommunicationError(
                 result,
                 httpError,
@@ -187,7 +213,6 @@ class EmailService {
               );
             }
           } else {
-            // Outros tipos de erro HTTP
             await discordNotification.notifyServerCommunicationError(
               result,
               httpError,
@@ -195,8 +220,6 @@ class EmailService {
             );
           }
 
-          // Só re-lança o erro se não for um erro permanente
-          // Erros permanentes permitem que o email seja marcado como processado
           if (!isPermanentError) {
             throw httpError;
           }
@@ -205,14 +228,12 @@ class EmailService {
     } catch (error) {
       console.error("❌ Erro geral no processamento:", error);
 
-      // Para erros não relacionados ao HTTP (parse do email, etc.)
       await discordNotification.notifyEmailProcessingError(
         parsedEmail.to || "unknown",
         parsedEmail.messageId,
         error
       );
 
-      // Re-throw para que o email-monitor saiba que houve erro
       throw error;
     }
   }
