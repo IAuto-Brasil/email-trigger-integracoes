@@ -50,11 +50,11 @@ export async function monitorEmailAccountRefactor(
     await client.connect();
     await client.mailboxOpen("INBOX");
 
-    // Busca emails das últimas 1 hora
-    const oneHourAgo = new Date(Date.now() - 1 * 60 * 60 * 1000);
+    // Busca emails das últimas 24 horas
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const messages = client.fetch(
-      { since: oneHourAgo },
+      { since: twentyFourHoursAgo },
       {
         envelope: true,
         source: true,
@@ -78,7 +78,7 @@ export async function monitorEmailAccountRefactor(
     }
 
     console.log(
-      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 1 hora`
+      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 24 horas`
     );
 
     if (allEmails.length === 0) {
@@ -127,6 +127,36 @@ export async function monitorEmailAccountRefactor(
     });
 
     console.log(`🆕 ${email}: ${newEmails.length} emails novos para processar`);
+
+    // Diagnóstico: quando há emails encontrados mas nenhum elegível para processamento,
+    // logamos o motivo de cada um (processado vs cooldown)
+    if (allEmails.length > 0 && newEmails.length === 0) {
+      for (const mail of allEmails) {
+        const processed =
+          processedMessageIds.has(mail.messageId) || processedUIDs.has(mail.uid);
+        const lastFailAt = recentFailures.get(mail.messageId);
+        const withinCooldown = lastFailAt
+          ? Date.now() - lastFailAt < FAILURE_COOLDOWN_MS
+          : false;
+
+        if (processed) {
+          console.log(
+            `↪️ ${email}: ${mail.messageId} (UID ${mail.uid}) ignorado: já processado`
+          );
+        } else if (withinCooldown && lastFailAt) {
+          const nextTryAt = new Date(
+            lastFailAt + FAILURE_COOLDOWN_MS
+          ).toLocaleTimeString();
+          console.log(
+            `↪️ ${email}: ${mail.messageId} (UID ${mail.uid}) ignorado: em cooldown até ${nextTryAt}`
+          );
+        } else {
+          console.log(
+            `➡️ ${email}: ${mail.messageId} (UID ${mail.uid}) elegível, porém não selecionado (verificar lógica)`
+          );
+        }
+      }
+    }
 
     for (const emailData of newEmails) {
       try {
