@@ -51,7 +51,7 @@ export async function monitorEmailAccountRefactor(
     await client.mailboxOpen("INBOX");
 
     // Busca emails das últimas 24 horas
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const twentyFourHoursAgo = new Date(Date.now() - 1 * 60 * 60 * 1000);
 
     const messages = client.fetch(
       { since: twentyFourHoursAgo },
@@ -78,7 +78,7 @@ export async function monitorEmailAccountRefactor(
     }
 
     console.log(
-      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 24 horas`
+      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 1 horas`
     );
 
     if (allEmails.length === 0) {
@@ -133,7 +133,8 @@ export async function monitorEmailAccountRefactor(
     if (allEmails.length > 0 && newEmails.length === 0) {
       for (const mail of allEmails) {
         const processed =
-          processedMessageIds.has(mail.messageId) || processedUIDs.has(mail.uid);
+          processedMessageIds.has(mail.messageId) ||
+          processedUIDs.has(mail.uid);
         const lastFailAt = recentFailures.get(mail.messageId);
         const withinCooldown = lastFailAt
           ? Date.now() - lastFailAt < FAILURE_COOLDOWN_MS
