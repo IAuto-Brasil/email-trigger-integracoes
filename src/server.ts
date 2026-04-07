@@ -1,28 +1,9 @@
-import crypto from "crypto";
 import express, { Request, Response } from "express";
 import { config } from "./config";
 import { prisma } from "../prisma";
 import { emailService } from "./services/email-service";
 import { setupSwagger } from "./swagger";
 import "dotenv/config";
-
-function timingSafeTokenEqual(expected: string, supplied: string): boolean {
-  const a = Buffer.from(supplied, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  if (a.length !== b.length) return false;
-  try {
-    return crypto.timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
-}
-
-function isAuthorizedCreateEmail(req: Request): boolean {
-  const token = config.createEmailApiToken;
-  if (!token) return false;
-  const authHeader = req.headers.authorization ?? "";
-  return timingSafeTokenEqual(token, authHeader);
-}
 
 const app = express();
 
@@ -66,27 +47,9 @@ setupSwagger(app);
  *         description: ID da empresa inválido
  */
 
-// receber um Authorization Bearer
 app.post(
   "/api/create-email/:companyId",
   async (req: Request, res: Response) => {
-    if (!config.createEmailApiToken) {
-      console.error(
-        "CREATE_EMAIL_API_TOKEN não configurado; recusa criação de e-mail."
-      );
-      return res.status(503).json({
-        success: false,
-        message: "Serviço de criação de e-mail não configurado",
-      });
-    }
-
-    if (!isAuthorizedCreateEmail(req)) {
-      return res.status(401).json({
-        success: false,
-        message: "Authorization header missing or invalid",
-      });
-    }
-
     const { companyId } = req.params;
 
     // Validação básica
