@@ -285,9 +285,19 @@ class EmailService {
 
       const promises = allEmails.map(async (emailData) => {
         try {
+          const imapPass =
+            (emailData.imapPassword?.trim() || config.defaultPwd) ?? "";
+          if (!imapPass) {
+            console.error(
+              `❌ ${emailData.email}: sem senha IMAP (defina DEFAULT_PWD ou imapPassword no banco)`
+            );
+            errors++;
+            return;
+          }
+
           await monitorEmailAccountRefactor(
             emailData.email,
-            config.defaultPwd,
+            imapPass,
             async (parsedEmail) => {
               totalNewEmails++;
               try {

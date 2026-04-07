@@ -199,8 +199,22 @@ export async function monitorEmailAccountRefactor(
         );
       }
     }
-  } catch (error) {
-    console.error(`❌ Erro ao conectar ${email}:`, error);
+  } catch (error: unknown) {
+    const err = error as {
+      authenticationFailed?: boolean;
+      message?: string;
+      response?: string;
+    };
+    if (err?.authenticationFailed) {
+      console.error(
+        `❌ IMAP autenticação falhou: ${email}\n` +
+          `   → Senha incorreta ou conta bloqueada. O app usa DEFAULT_PWD do .env para todas as contas, ` +
+          `a menos que exista imapPassword no banco (tabela emails) para este endereço.\n` +
+          `   → Corrija: alinhe a senha no cPanel com DEFAULT_PWD, ou defina imapPassword só para esta conta.`
+      );
+    } else {
+      console.error(`❌ Erro ao conectar ${email}:`, error);
+    }
     await discordNotification.notifyEmailConnectionError(email, error);
   } finally {
     if (client) {
