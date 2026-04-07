@@ -20,6 +20,7 @@
   "dependencies": {
     "@prisma/client": "^6.15.0",
     "axios": "^1.11.0",
+    "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "imapflow": "^1.0.195",
     "mailparser": "^3.7.4",

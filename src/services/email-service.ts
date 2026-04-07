@@ -14,6 +14,7 @@ import { isPermanentWhatsAppError } from "../utils/errors";
 
 class EmailService {
   private scheduledInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
 
   /**
@@ -85,7 +86,11 @@ class EmailService {
   /**
    * Processa um novo email recebido
    */
-  private async handleNewEmail(emailId: number, parsedEmail: ParsedEmail) {
+  private async handleNewEmail(
+    accountEmail: string,
+    _emailId: number,
+    parsedEmail: ParsedEmail
+  ) {
     // Tipos e guardas para o payload do GPT/cache
     type LeadPayload = {
       leadName: string;
@@ -152,8 +157,8 @@ class EmailService {
             return;
           }
 
-          const response = await axios.post(
-            "https://api.sistema.iautobrasil.com.br/server-iauto/api/receive-message-portals",
+          const leadResponse = await axios.post(
+            config.receiveLeadUrl,
             {
               leadName: result.leadName,
               leadEmail: result.leadEmail,
@@ -164,12 +169,27 @@ class EmailService {
               portal: result.portal,
               valueRaw: result.valueRaw,
               value: result.value,
+            },
+            {
+              timeout: 45_000,
+              validateStatus: () => true,
             }
           );
 
+          if (leadResponse.status >= 400) {
+            const httpErr: any = new Error(`HTTP ${leadResponse.status}`);
+            httpErr.response = leadResponse;
+            throw httpErr;
+          }
+
           console.log("Lead enviado para IAuto Brasil", normalizedPhone);
 
-          if (result.value && parseInt(result.value) > 5000000) {
+          const valueNum = Number.parseInt(String(result.value), 10);
+          if (
+            result.value &&
+            !Number.isNaN(valueNum) &&
+            valueNum > 5_000_000
+          ) {
             await discordNotification.sendNotification(
               NotificationType.SUCCESS,
               "Lead de Alto Valor Processado",
@@ -209,14 +229,14 @@ class EmailService {
               await discordNotification.notifyServerCommunicationError(
                 result,
                 httpError,
-                result.to.split("@")[0]
+                result.to?.split("@")[0] ?? ""
               );
             }
           } else {
             await discordNotification.notifyServerCommunicationError(
               result,
               httpError,
-              result.to.split("@")[0]
+              result.to?.split("@")[0] ?? ""
             );
           }
 
@@ -226,14 +246,10 @@ class EmailService {
         }
       }
     } catch (error) {
-      console.error("❌ Erro geral no processamento:", error);
-
-      await discordNotification.notifyEmailProcessingError(
-        parsedEmail.to || "unknown",
-        parsedEmail.messageId,
+      console.error(
+        `❌ Erro geral no processamento (${accountEmail}, ${parsedEmail.messageId}):`,
         error
       );
-
       throw error;
     }
   }
@@ -275,7 +291,11 @@ class EmailService {
             async (parsedEmail) => {
               totalNewEmails++;
               try {
-                await this.handleNewEmail(emailData.id, parsedEmail);
+                await this.handleNewEmail(
+                  emailData.email,
+                  emailData.id,
+                  parsedEmail
+                );
                 successfullyProcessed++;
               } catch (error: any) {
                 errors++;
@@ -376,8 +396,11 @@ class EmailService {
       this.runMonitoringCycle();
     }, intervalMs);
 
-    setInterval(() => {
-      this.runCleanup();
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    this.cleanupInterval = setInterval(() => {
+      void this.runCleanup();
     }, 6 * 60 * 60 * 1000);
   }
 
@@ -386,6 +409,10 @@ class EmailService {
       clearInterval(this.scheduledInterval);
       this.scheduledInterval = null;
       console.log("🛑 Agendamento de monitoramento parado");
+    }
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
   }
 
@@ -411,17 +438,25 @@ class EmailService {
    * Para o monitoramento de um email específico (para compatibilidade)
    */
   async stopMonitoring(email: string) {
+    const updated = await prisma.email.updateMany({
+      where: { email },
+      data: { isActive: false },
+    });
     console.log(
-      `ℹ️ Solicitação para parar monitoramento de ${email} (será ignorado no próximo ciclo se inativo)`
+      `ℹ️ Monitoramento desativado para ${email} (${updated.count} registro(s))`
     );
   }
 
   /**
-   * Retorna a lista de emails sendo monitorados
+   * Retorna a lista de emails ativos no banco
    */
-  getMonitoredEmails(): string[] {
-    // Retorna emails ativos do banco em vez de cache em memória
-    return [];
+  async getMonitoredEmails(): Promise<string[]> {
+    const rows = await prisma.email.findMany({
+      where: { isActive: true },
+      select: { email: true },
+      orderBy: { id: "asc" },
+    });
+    return rows.map((r) => r.email);
   }
 
   /**

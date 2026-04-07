@@ -50,11 +50,11 @@ export async function monitorEmailAccountRefactor(
     await client.connect();
     await client.mailboxOpen("INBOX");
 
-    // Busca emails das últimas 24 horas
-    const twentyFourHoursAgo = new Date(Date.now() - 1 * 60 * 60 * 1000);
+    const fetchWindowMs = 60 * 60 * 1000; // 1 hora
+    const windowStart = new Date(Date.now() - fetchWindowMs);
 
     const messages = client.fetch(
-      { since: twentyFourHoursAgo },
+      { since: windowStart },
       {
         envelope: true,
         source: true,
@@ -78,7 +78,7 @@ export async function monitorEmailAccountRefactor(
     }
 
     console.log(
-      `📨 ${email}: Encontrados ${allEmails.length} emails nas últimas 1 horas`
+      `📨 ${email}: Encontrados ${allEmails.length} e-mail(s) na janela de ${fetchWindowMs / 60_000} min`
     );
 
     if (allEmails.length === 0) {
@@ -214,7 +214,10 @@ export async function monitorEmailAccountRefactor(
 }
 
 async function parseMessage(msg: FetchMessageObject): Promise<ParsedEmail> {
-  const parsed = await simpleParser(msg.source!);
+  if (!msg.source || msg.source.length === 0) {
+    throw new Error(`UID ${msg.uid}: mensagem sem corpo (source vazio)`);
+  }
+  const parsed = await simpleParser(msg.source);
 
   // Gera um messageId único se não existir
   const messageId = parsed.messageId || `${msg.uid}-${Date.now()}`;

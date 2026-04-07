@@ -1,6 +1,13 @@
 import "dotenv/config";
 
 export const config = {
+  /** Token Bearer esperado em POST /api/create-email (obrigatório em produção). */
+  createEmailApiToken: process.env.CREATE_EMAIL_API_TOKEN ?? "",
+  /** Webhook Discord; se vazio, notificações Discord são ignoradas. */
+  discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL ?? "",
+  receiveLeadUrl:
+    process.env.RECEIVE_LEAD_URL ??
+    "https://api.sistema.iautobrasil.com.br/server-iauto/api/receive-message-portals",
   cpanel: {
     host: process.env.CPANEL_HOST!,
     user: process.env.CPANEL_USER!,

@@ -76,14 +76,19 @@ function safeParseArray(jsonStr: string): LeadJson[] {
   const last = jsonStr.lastIndexOf("]");
   if (first >= 0 && last > first) {
     const slice = jsonStr.slice(first, last + 1);
-    const parsed = JSON.parse(slice);
-    if (Array.isArray(parsed)) return parsed as LeadJson[];
+    try {
+      const parsed = JSON.parse(slice);
+      if (Array.isArray(parsed)) return parsed as LeadJson[];
+    } catch {
+      /* JSON inválido no trecho entre [ e ] */
+    }
   }
-  // fallback direto
   try {
     const parsed = JSON.parse(jsonStr);
     if (Array.isArray(parsed)) return parsed as LeadJson[];
-  } catch (_) {}
+  } catch {
+    /* ignora */
+  }
 
   return [];
 }

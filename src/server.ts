@@ -1,9 +1,28 @@
+import crypto from "crypto";
 import express, { Request, Response } from "express";
 import { config } from "./config";
 import { prisma } from "../prisma";
 import { emailService } from "./services/email-service";
 import { setupSwagger } from "./swagger";
 import "dotenv/config";
+
+function timingSafeTokenEqual(expected: string, supplied: string): boolean {
+  const a = Buffer.from(supplied, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+function isAuthorizedCreateEmail(req: Request): boolean {
+  const token = config.createEmailApiToken;
+  if (!token) return false;
+  const authHeader = req.headers.authorization ?? "";
+  return timingSafeTokenEqual(token, authHeader);
+}
 
 const app = express();
 
@@ -51,21 +70,20 @@ setupSwagger(app);
 app.post(
   "/api/create-email/:companyId",
   async (req: Request, res: Response) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({
+    if (!config.createEmailApiToken) {
+      console.error(
+        "CREATE_EMAIL_API_TOKEN não configurado; recusa criação de e-mail."
+      );
+      return res.status(503).json({
         success: false,
-        message: "Authorization header missing",
+        message: "Serviço de criação de e-mail não configurado",
       });
     }
 
-    if (
-      authHeader !==
-      "630f4367aa75d640ca95e5153142f3cb5f5a0421da5777b1095a0a59f2f30a50"
-    ) {
+    if (!isAuthorizedCreateEmail(req)) {
       return res.status(401).json({
         success: false,
-        message: "Authorization header invalid",
+        message: "Authorization header missing or invalid",
       });
     }
 
@@ -123,12 +141,20 @@ app.post(
  *                     - "email1@iautobrasil.com"
  *                     - "email2@iautobrasil.com"
  */
-app.get("/api/monitored-emails", (req: Request, res: Response) => {
-  const monitoredEmails = emailService.getMonitoredEmails();
-  res.json({
-    count: monitoredEmails.length,
-    emails: monitoredEmails,
-  });
+app.get("/api/monitored-emails", async (req: Request, res: Response) => {
+  try {
+    const monitoredEmails = await emailService.getMonitoredEmails();
+    res.json({
+      count: monitoredEmails.length,
+      emails: monitoredEmails,
+    });
+  } catch (error) {
+    console.error("Erro ao listar e-mails monitorados:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao listar e-mails monitorados",
+    });
+  }
 });
 
 /**
@@ -167,6 +193,13 @@ app.post(
   "/api/stop-monitoring/:companyId",
   async (req: Request, res: Response) => {
     const { companyId } = req.params;
+
+    if (!companyId || Number.isNaN(Number(companyId))) {
+      return res.status(400).json({
+        success: false,
+        message: "ID da empresa inválido",
+      });
+    }
 
     try {
       const emailAccount = await prisma.email.findFirst({
@@ -316,9 +349,15 @@ async function startServer() {
   try {
     // Inicia o monitoramento de todos os emails existentes
     console.log("🔄 Iniciando monitoramento dos emails existentes...");
-    emailService.startScheduledMonitoring(
-      Number(process.env.SCHEDULE_TIME_IN_MINUTES)
-    );
+    const rawSchedule = Number(process.env.SCHEDULE_TIME_IN_MINUTES);
+    const scheduleMinutes =
+      Number.isFinite(rawSchedule) && rawSchedule > 0 ? rawSchedule : 1;
+    if (rawSchedule !== scheduleMinutes) {
+      console.warn(
+        `SCHEDULE_TIME_IN_MINUTES inválido ou ausente; usando ${scheduleMinutes} min.`
+      );
+    }
+    emailService.startScheduledMonitoring(scheduleMinutes);
 
     // Inicia o servidor
     app.listen(config.server.port, () => {
@@ -333,15 +372,23 @@ async function startServer() {
   }
 }
 
-// Tratamento de sinais para graceful shutdown
-process.on("SIGINT", () => {
-  console.log("\n🛑 Recebido SIGINT, encerrando servidor...");
+async function shutdown(signal: string) {
+  console.log(`\n🛑 Recebido ${signal}, encerrando servidor...`);
+  try {
+    emailService.stopScheduledMonitoring();
+    await prisma.$disconnect();
+  } catch (e) {
+    console.error("Erro no encerramento:", e);
+  }
   process.exit(0);
+}
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
 });
 
 process.on("SIGTERM", () => {
-  console.log("\n🛑 Recebido SIGTERM, encerrando servidor...");
-  process.exit(0);
+  void shutdown("SIGTERM");
 });
 
 // Inicia o servidor

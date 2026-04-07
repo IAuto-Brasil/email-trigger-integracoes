@@ -1,7 +1,5 @@
 import axios from "axios";
-
-const DISCORD_WEBHOOK_URL =
-  "https://discord.com/api/webhooks/1417580521776480426/_thqOFyKYn5ikzw6_qrhx_Hetv7qgSqvxJYkjI0x-HlilR6SLhhJSp52fo7yq-HeXK1G";
+import { config } from "../config";
 
 export enum NotificationType {
   ERROR = "error",
@@ -32,8 +30,12 @@ interface DiscordMessage {
 
 class DiscordNotificationService {
   private async sendToDiscord(message: DiscordMessage): Promise<void> {
+    const url = config.discordWebhookUrl?.trim();
+    if (!url) {
+      return;
+    }
     try {
-      await axios.post(DISCORD_WEBHOOK_URL, message, {
+      await axios.post(url, message, {
         headers: {
           "Content-Type": "application/json",
         },
