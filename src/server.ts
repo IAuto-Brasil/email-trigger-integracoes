@@ -3,6 +3,7 @@ import { config } from "./config";
 import { prisma } from "../prisma";
 import { emailService } from "./services/email-service";
 import { setupSwagger } from "./swagger";
+import { parseCompanyIdParam } from "./utils/company-id";
 import "dotenv/config";
 
 const app = express();
@@ -24,8 +25,9 @@ setupSwagger(app);
  *         name: companyId
  *         required: true
  *         schema:
- *           type: integer
- *         description: ID da empresa
+ *           type: string
+ *           example: "b69bc8b5"
+ *         description: ID da empresa (número ou slug/UUID na parte local do e-mail)
  *     responses:
  *       200:
  *         description: Email criado e monitorado
@@ -50,13 +52,12 @@ setupSwagger(app);
 app.post(
   "/api/create-email/:companyId",
   async (req: Request, res: Response) => {
-    const { companyId } = req.params;
-
-    // Validação básica
-    if (!companyId || isNaN(Number(companyId))) {
+    const companyId = parseCompanyIdParam(req.params.companyId);
+    if (!companyId) {
       return res.status(400).json({
         success: false,
-        message: "ID da empresa inválido",
+        message:
+          "ID da empresa inválido (use até 64 caracteres: letras, números, . _ -)",
       });
     }
 
@@ -133,8 +134,9 @@ app.get("/api/monitored-emails", async (req: Request, res: Response) => {
  *         name: companyId
  *         required: true
  *         schema:
- *           type: integer
- *         description: ID da empresa
+ *           type: string
+ *           example: "b69bc8b5"
+ *         description: ID da empresa (número ou slug/UUID na parte local do e-mail)
  *     responses:
  *       200:
  *         description: Monitoramento parado
@@ -155,18 +157,18 @@ app.get("/api/monitored-emails", async (req: Request, res: Response) => {
 app.post(
   "/api/stop-monitoring/:companyId",
   async (req: Request, res: Response) => {
-    const { companyId } = req.params;
-
-    if (!companyId || Number.isNaN(Number(companyId))) {
+    const companyId = parseCompanyIdParam(req.params.companyId);
+    if (!companyId) {
       return res.status(400).json({
         success: false,
-        message: "ID da empresa inválido",
+        message:
+          "ID da empresa inválido (use até 64 caracteres: letras, números, . _ -)",
       });
     }
 
     try {
       const emailAccount = await prisma.email.findFirst({
-        where: { companyId: Number(companyId) },
+        where: { companyId },
       });
 
       if (!emailAccount) {

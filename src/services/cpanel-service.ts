@@ -80,15 +80,25 @@ export async function listEmails() {
   }
 }
 
+/** Retorna o endereço completo user@domain para a API cPanel (aceita só o usuário ou e-mail completo). */
+export function resolveCpanelMailbox(emailOrLocal: string): string {
+  const d = domain.toLowerCase();
+  if (emailOrLocal.includes("@")) {
+    return emailOrLocal.trim();
+  }
+  return `${emailOrLocal.trim()}@${d}`;
+}
+
 /**
- * Deleta uma conta de email
+ * Deleta uma conta de email (local ou endereço completo)
  */
 export async function deleteEmailAccount(email: string) {
+  const mailbox = resolveCpanelMailbox(email);
   try {
     const response = await axios.get(`${host}/execute/Email/delete_pop`, {
       headers: getAuthHeader(),
       params: {
-        email: `${email}@${domain}`,
+        email: mailbox,
       },
       timeout: 30000,
     });
@@ -101,7 +111,7 @@ export async function deleteEmailAccount(email: string) {
 
     return response.data;
   } catch (error) {
-    console.error(`Erro ao deletar conta de email ${email}@${domain}:`, error);
+    console.error(`Erro ao deletar conta de email ${mailbox}:`, error);
     throw error;
   }
 }

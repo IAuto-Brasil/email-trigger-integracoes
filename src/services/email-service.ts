@@ -27,7 +27,7 @@ class EmailService {
       // Verifica se já existe email para esta empresa
       const existingEmail = await prisma.email.findFirst({
         where: {
-          companyId: Number(companyId),
+          companyId,
         },
       });
 
@@ -58,7 +58,7 @@ class EmailService {
       const emailData = await prisma.email.create({
         data: {
           email: `${companyId}@${config.cpanel.domain}`,
-          companyId: Number(companyId),
+          companyId,
         },
       });
 

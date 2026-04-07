@@ -14,11 +14,12 @@ model Email {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   isActive  Boolean  @default(true)
-  companyId Int
+  companyId String
 
   // Relacionamento com emails recebidos
   receivedEmails ReceivedEmail[]
 
+  @@index([companyId])
   @@map("emails")
 }
 

@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "cleanup-emails": "ts-node scripts/cleanup-emails-interactive.ts",
     "clean": "rm -rf dist"
   },
   "keywords": [],
