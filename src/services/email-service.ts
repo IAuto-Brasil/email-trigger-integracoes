@@ -16,6 +16,8 @@ class EmailService {
   private scheduledInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
+  /** Fim do último ciclo IMAP concluído (não atualiza se o ciclo anterior ainda estava em execução e este foi ignorado). */
+  private lastEmailCheckAt: Date | null = null;
 
   /**
    * Cria uma nova conta de email e inicia o monitoramento
@@ -383,7 +385,13 @@ class EmailService {
       errors++;
     } finally {
       this.isRunning = false;
+      this.lastEmailCheckAt = new Date();
     }
+  }
+
+  /** ISO 8601 do término do último ciclo de verificação de e-mail, ou null se nunca rodou. */
+  getLastEmailCheckAtIso(): string | null {
+    return this.lastEmailCheckAt?.toISOString() ?? null;
   }
 
   /**
@@ -500,6 +508,7 @@ class EmailService {
         processedToday,
         isScheduledRunning: this.scheduledInterval !== null,
         isCurrentlyRunning: this.isRunning,
+        lastEmailCheckAt: this.getLastEmailCheckAtIso(),
       };
     } catch (error) {
       console.error("❌ Erro ao obter estatísticas:", error);

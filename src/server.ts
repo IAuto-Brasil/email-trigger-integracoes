@@ -274,6 +274,11 @@ app.post("/api/trigger-monitoring", async (req: Request, res: Response) => {
  *                 monitoredEmails:
  *                   type: integer
  *                   example: 2
+ *                 lastEmailCheckAt:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *                   description: Quando terminou o último ciclo de verificação IMAP
  */
 app.get("/api/health", async (req: Request, res: Response) => {
   try {
@@ -282,12 +287,14 @@ app.get("/api/health", async (req: Request, res: Response) => {
     res.json({
       status: "ok",
       timestamp: new Date().toISOString(),
+      lastEmailCheckAt: emailService.getLastEmailCheckAtIso(),
       monitoringStats: stats,
     });
   } catch (error) {
     res.json({
       status: "ok",
       timestamp: new Date().toISOString(),
+      lastEmailCheckAt: emailService.getLastEmailCheckAtIso(),
       monitoringStats: null,
     });
   }
