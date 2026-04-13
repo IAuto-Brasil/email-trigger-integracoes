@@ -28,7 +28,7 @@ const recentFailures = new Map<string, number>();
 export async function monitorEmailAccountRefactor(
   email: string,
   password: string,
-  onNewMail: (mail: ParsedEmail) => void
+  onNewMail: (mail: ParsedEmail) => void | Promise<void>
 ) {
   let client: ImapFlow | null = null;
 
@@ -50,7 +50,7 @@ export async function monitorEmailAccountRefactor(
     await client.connect();
     await client.mailboxOpen("INBOX");
 
-    const fetchWindowMs = 60 * 60 * 1000; // 1 hora
+    const fetchWindowMs = 48 * 60 * 60 * 1000; // 48 horas
     const windowStart = new Date(Date.now() - fetchWindowMs);
 
     const messages = client.fetch(
@@ -78,7 +78,7 @@ export async function monitorEmailAccountRefactor(
     }
 
     console.log(
-      `📨 ${email}: Encontrados ${allEmails.length} e-mail(s) na janela de ${fetchWindowMs / 60_000} min`
+      `📨 ${email}: Encontrados ${allEmails.length} e-mail(s) na janela de ${fetchWindowMs / 3_600_000} h`
     );
 
     if (allEmails.length === 0) {

@@ -12,6 +12,13 @@ import { discordNotification, NotificationType } from "./discord-notification";
 import { normalizePhone } from "../utils/phone";
 import { isPermanentWhatsAppError } from "../utils/errors";
 
+/** Pausa entre um lead e outro (envio API / processamento) para respeitar rate limit. */
+const LEAD_PROCESSING_DELAY_MS = 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 class EmailService {
   private scheduledInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -323,6 +330,8 @@ class EmailService {
                 }
 
                 throw error;
+              } finally {
+                await sleep(LEAD_PROCESSING_DELAY_MS);
               }
             }
           );
