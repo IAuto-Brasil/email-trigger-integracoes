@@ -11,18 +11,18 @@ import {
 import { discordNotification, NotificationType } from "./discord-notification";
 import { normalizePhone } from "../utils/phone";
 import { isPermanentWhatsAppError } from "../utils/errors";
+import { isTransientImapError } from "../utils/imap-transient";
+import { withTimeout } from "../utils/promise-timeout";
+import { sleep } from "../utils/sleep";
 
 /** Pausa entre um lead e outro (envio API / processamento) para respeitar rate limit. */
 const LEAD_PROCESSING_DELAY_MS = 1000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 class EmailService {
   private scheduledInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
+  private cycleStartedAt: number | null = null;
   /** Fim do último ciclo IMAP concluído (não atualiza se o ciclo anterior ainda estava em execução e este foi ignorado). */
   private lastEmailCheckAt: Date | null = null;
 
@@ -264,7 +264,7 @@ class EmailService {
   }
 
   /**
-   * Executa um ciclo de monitoramento de todos os emails
+   * Garante `isRunning` e `lastEmailCheckAt` coerentes e evita rejeições não tratadas.
    */
   async runMonitoringCycle() {
     if (this.isRunning) {
@@ -273,7 +273,21 @@ class EmailService {
     }
 
     this.isRunning = true;
+    this.cycleStartedAt = Date.now();
+    try {
+      await this.runMonitoringCycleBody();
+    } catch (unexpected) {
+      console.error("❌ [monitoring] exceção inesperada fora do try do ciclo:", unexpected);
+    } finally {
+      this.isRunning = false;
+      this.cycleStartedAt = null;
+      this.lastEmailCheckAt = new Date();
+    }
+  }
+
+  private async runMonitoringCycleBody() {
     const startTime = Date.now();
+    const mon = config.monitoring;
 
     let totalNewEmails = 0;
     let successfullyProcessed = 0;
@@ -304,37 +318,61 @@ class EmailService {
             return;
           }
 
-          await monitorEmailAccountRefactor(
-            emailData.email,
-            imapPass,
-            async (parsedEmail) => {
-              totalNewEmails++;
-              try {
-                await this.handleNewEmail(
-                  emailData.email,
-                  emailData.id,
-                  parsedEmail
-                );
-                successfullyProcessed++;
-              } catch (error: any) {
-                errors++;
+          const onNewMail = async (parsedEmail: ParsedEmail) => {
+            totalNewEmails++;
+            try {
+              await this.handleNewEmail(
+                emailData.email,
+                emailData.id,
+                parsedEmail
+              );
+              successfullyProcessed++;
+            } catch (error: any) {
+              errors++;
 
-                // Categoriza os erros
-                if (
-                  error?.response?.status === 400 &&
-                  error?.response?.data?.message?.includes("WhatsApp")
-                ) {
-                  whatsappErrors++;
-                } else if (error?.response) {
-                  serverErrors++;
-                }
-
-                throw error;
-              } finally {
-                await sleep(LEAD_PROCESSING_DELAY_MS);
+              if (
+                error?.response?.status === 400 &&
+                error?.response?.data?.message?.includes("WhatsApp")
+              ) {
+                whatsappErrors++;
+              } else if (error?.response) {
+                serverErrors++;
               }
+
+              throw error;
+            } finally {
+              await sleep(LEAD_PROCESSING_DELAY_MS);
             }
-          );
+          };
+
+          for (let attempt = 0; attempt < mon.imapFullCycleRetryMax; attempt++) {
+            try {
+              await withTimeout(
+                monitorEmailAccountRefactor(
+                  emailData.email,
+                  imapPass,
+                  onNewMail
+                ),
+                mon.perAccountImapTimeoutMs,
+                `IMAP ${emailData.email}`
+              );
+              break;
+            } catch (e) {
+              const canRetry =
+                attempt < mon.imapFullCycleRetryMax - 1 &&
+                isTransientImapError(e);
+              if (canRetry) {
+                console.warn(
+                  `↻ Nova tentativa IMAP (conta) ${emailData.email} após falha transiente (tentativa ${
+                    attempt + 2
+                  }/${mon.imapFullCycleRetryMax})`
+                );
+                await sleep(mon.imapFullCycleRetryDelayMs);
+                continue;
+              }
+              throw e;
+            }
+          }
         } catch (error) {
           console.error(`❌ Erro ao monitorar ${emailData.email}:`, error);
           errors++;
@@ -348,7 +386,6 @@ class EmailService {
         `✅ [${new Date().toLocaleTimeString()}] Ciclo concluído em ${duration}ms`
       );
 
-      // Notificação de estatísticas detalhadas (apenas se houver atividade)
       if (totalNewEmails > 0 || errors > 0) {
         const statsDetails = {
           "Contas Monitoradas": String(allEmails.length),
@@ -371,30 +408,34 @@ class EmailService {
             ? NotificationType.INFO
             : NotificationType.SUCCESS;
 
-        await discordNotification.sendNotification(
-          notificationType,
-          "📊 Relatório do Ciclo de Monitoramento",
-          `Ciclo de verificação concluído`,
-          statsDetails
-        );
+        try {
+          await discordNotification.sendNotification(
+            notificationType,
+            "📊 Relatório do Ciclo de Monitoramento",
+            `Ciclo de verificação concluído`,
+            statsDetails
+          );
+        } catch (notifyErr) {
+          console.error("❌ Falha ao enviar relatório do ciclo ao Discord:", notifyErr);
+        }
       }
     } catch (error: any) {
       console.error("❌ Erro no ciclo de monitoramento:", error);
-
-      await discordNotification.sendNotification(
-        NotificationType.ERROR,
-        "💥 Erro Crítico no Sistema",
-        "Falha geral no ciclo de monitoramento",
-        {
-          Erro: error?.message || String(error),
-          Timestamp: new Date().toLocaleString("pt-BR"),
-        }
-      );
-
       errors++;
-    } finally {
-      this.isRunning = false;
-      this.lastEmailCheckAt = new Date();
+
+      try {
+        await discordNotification.sendNotification(
+          NotificationType.ERROR,
+          "💥 Erro Crítico no Sistema",
+          "Falha geral no ciclo de monitoramento",
+          {
+            Erro: error?.message || String(error),
+            Timestamp: new Date().toLocaleString("pt-BR"),
+          }
+        );
+      } catch (notifyErr) {
+        console.error("❌ Falha ao notificar Discord (ciclo crítico):", notifyErr);
+      }
     }
   }
 
@@ -415,19 +456,29 @@ class EmailService {
       `⏰ Iniciando monitoramento agendado a cada ${intervalMinutes} minuto(s)`
     );
 
-    discordNotification.notifySystemStart(intervalMinutes);
+    void discordNotification
+      .notifySystemStart(intervalMinutes)
+      .catch((err) =>
+        console.error("❌ Falha ao notificar Discord (início do monitor):", err)
+      );
 
-    this.runMonitoringCycle();
+    void this.runMonitoringCycle().catch((err) => {
+      console.error("❌ Ciclo de monitoramento (inicial) rejeitou:", err);
+    });
 
     this.scheduledInterval = setInterval(() => {
-      this.runMonitoringCycle();
+      void this.runMonitoringCycle().catch((err) => {
+        console.error("❌ Ciclo de monitoramento (agendado) rejeitou:", err);
+      });
     }, intervalMs);
 
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
     }
     this.cleanupInterval = setInterval(() => {
-      void this.runCleanup();
+      void this.runCleanup().catch((err) => {
+        console.error("❌ Erro na limpeza agendada:", err);
+      });
     }, 6 * 60 * 60 * 1000);
   }
 
@@ -491,7 +542,11 @@ class EmailService {
    */
   async stopAllMonitoring() {
     this.stopScheduledMonitoring();
-    await discordNotification.notifySystemStop();
+    try {
+      await discordNotification.notifySystemStop();
+    } catch (e) {
+      console.error("❌ Falha ao notificar Discord (parada):", e);
+    }
     console.log("🛑 Monitoramento de todas as contas parado");
   }
 
@@ -517,6 +572,11 @@ class EmailService {
         processedToday,
         isScheduledRunning: this.scheduledInterval !== null,
         isCurrentlyRunning: this.isRunning,
+        /** ms desde o início do ciclo atual, ou `null` se nenhum ciclo em andamento. */
+        currentCycleRuntimeMs:
+          this.isRunning && this.cycleStartedAt != null
+            ? Date.now() - this.cycleStartedAt
+            : null,
         lastEmailCheckAt: this.getLastEmailCheckAtIso(),
       };
     } catch (error) {

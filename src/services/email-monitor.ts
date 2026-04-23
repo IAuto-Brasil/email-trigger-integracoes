@@ -3,6 +3,9 @@
 import { ImapFlow, FetchMessageObject } from "imapflow";
 import { simpleParser } from "mailparser";
 import { prisma } from "../../prisma";
+import { config } from "../config";
+import { isTransientImapError } from "../utils/imap-transient";
+import { sleep } from "../utils/sleep";
 import { discordNotification } from "./discord-notification";
 
 export interface ParsedEmail {
@@ -25,6 +28,44 @@ export interface ParsedEmail {
 const FAILURE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutos
 const recentFailures = new Map<string, number>();
 
+function connectRetryable(
+  err: unknown,
+  isLast: boolean
+): boolean {
+  if (isLast) return false;
+  if ((err as { authenticationFailed?: boolean })?.authenticationFailed) {
+    return false;
+  }
+  return isTransientImapError(err);
+}
+
+async function safeNotifyConnectionError(
+  email: string,
+  error: unknown
+): Promise<void> {
+  try {
+    await discordNotification.notifyEmailConnectionError(email, error);
+  } catch (notifyErr) {
+    console.error("❌ Falha ao notificar Discord (IMAP):", notifyErr);
+  }
+}
+
+async function safeNotifyProcessingError(
+  accountEmail: string,
+  messageId: string,
+  error: unknown
+): Promise<void> {
+  try {
+    await discordNotification.notifyEmailProcessingError(
+      accountEmail,
+      messageId,
+      error
+    );
+  } catch (notifyErr) {
+    console.error("❌ Falha ao notificar Discord (processamento e-mail):", notifyErr);
+  }
+}
+
 export async function monitorEmailAccountRefactor(
   email: string,
   password: string,
@@ -33,22 +74,59 @@ export async function monitorEmailAccountRefactor(
   let client: ImapFlow | null = null;
 
   try {
-    client = new ImapFlow({
-      host: "mail.iautobrasil.com",
-      port: 993,
-      secure: true,
-      auth: {
-        user: email,
-        pass: password,
-      },
-      logger: false,
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
+    for (
+      let attempt = 0;
+      attempt < config.monitoring.imapConnectMaxAttempts;
+      attempt++
+    ) {
+      if (client) {
+        try {
+          await client.logout();
+        } catch {
+          // ignore
+        }
+        client = null;
+      }
 
-    await client.connect();
-    await client.mailboxOpen("INBOX");
+      client = new ImapFlow({
+        host: "mail.iautobrasil.com",
+        port: 993,
+        secure: true,
+        auth: {
+          user: email,
+          pass: password,
+        },
+        logger: false,
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+
+      try {
+        await client.connect();
+        await client.mailboxOpen("INBOX");
+        break;
+      } catch (connectErr) {
+        const isLast =
+          attempt === config.monitoring.imapConnectMaxAttempts - 1;
+        if (connectRetryable(connectErr, isLast)) {
+          const delay = config.monitoring.imapConnectBaseDelayMs * Math.pow(2, attempt);
+          console.warn(
+            `⚠️ IMAP ${email} tentativa ${attempt + 1}/${
+              config.monitoring.imapConnectMaxAttempts
+            } falhou; nova tentativa em ${delay / 1000}s:`,
+            connectErr
+          );
+          await sleep(delay);
+          continue;
+        }
+        throw connectErr;
+      }
+    }
+
+    if (!client) {
+      return;
+    }
 
     const fetchWindowMs = 48 * 60 * 60 * 1000; // 48 horas
     const windowStart = new Date(Date.now() - fetchWindowMs);
@@ -192,7 +270,7 @@ export async function monitorEmailAccountRefactor(
           } minutos`
         );
 
-        await discordNotification.notifyEmailProcessingError(
+        await safeNotifyProcessingError(
           email,
           emailData.messageId,
           error
@@ -215,7 +293,7 @@ export async function monitorEmailAccountRefactor(
     } else {
       console.error(`❌ Erro ao conectar ${email}:`, error);
     }
-    await discordNotification.notifyEmailConnectionError(email, error);
+    await safeNotifyConnectionError(email, error);
   } finally {
     if (client) {
       try {

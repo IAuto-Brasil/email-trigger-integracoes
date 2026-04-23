@@ -13,6 +13,7 @@
     "db:studio": "prisma studio",
     "cleanup-emails": "ts-node scripts/cleanup-emails-interactive.ts",
     "reset-emails-bulk": "ts-node scripts/reset-emails-bulk.ts",
+    "recreate-email": "ts-node scripts/recreate-single-email.ts",
     "clean": "rm -rf dist"
   },
   "keywords": [],

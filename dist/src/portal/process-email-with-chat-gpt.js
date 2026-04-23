@@ -1,0 +1,167 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = processEmailWithGPT;
+const openai_1 = __importDefault(require("../openai"));
+const SYS_PROMPT = `
+Você é um extrator de dados de e-mails de portais automotivos.
+TAREFA: Ler o conteúdo (headers, subject, texto e HTML) e retornar EXATAMENTE um array JSON com UM objeto contendo os campos:
+[
+  {
+    "leadName": "...",    // Separe o nome do lead de um suposto nome comercial, ex: João Car Shop > João, ou Carros do Fernando Lima > Fernando Lima
+    "leadEmail": "...",   // Dentro do HTML, busque o email do lead, não do remetente ou destinatário
+    "leadPhone": "...",   // Formate como DDI DDD e número juntos, ex.: "5521970042051" sem espacos, caso nao comece com 55, adicione o 55 na frente.
+    "vehicle": "...",     // Nome completo do veículo (marca, modelo, versão, ano quando houver)
+    "from": "...",        // remetente (email)
+    "to": "...",          // destinatário (email) sempre utilize o destinário que contenha o domain @iautobrasil.com, ex: 15@iautobrasil.com, 76@iautobrasil.com e etc... {id}@iautobrasil.com
+    "portal": "...",      // nome do portal (ex.: "iCarros", "SóCarrão", "NaPista", "MobiAuto", "UsadosBr", "Chaves na Mão")
+    "valueRaw": "...",    // preço no formato BR com R$, ex.: "R$ 56.900", "R$ 108.900"
+    "value": "..."        // apenas dígitos do preço, ex.: "56900" ou "10890000" se vier com centavos
+  }
+]
+
+REGRAS:
+- Retorne SOMENTE o array JSON acima. Nada de comentários, texto extra ou campos adicionais.
+- Se faltar alguma informação no e-mail, deixe o campo vazio "" (nunca use null).
+- "value": extraia apenas dígitos. Se houver centavos, deixe os sem (ex.: "10890000" para "R$ 108.900").
+- "valueRaw": deve começar por "R$ " e usar separador BR (ponto para milhar e vírgula para centavos), ex.: "R$ 56.900" ou "R$ 108.900".
+- "portal": use uma das pistas (domínio do remetente, assinatura, logos) para inferir. Se não der, use a dica recebida (portalHint).
+- "from" e "to": devem ser e-mails; se houver múltiplos "to", escolha o que conter o domain @iautobrasil.com correspondente ao id  da loja.
+- "leadPhone": mantenha apenas dígitos  Ex.: "(21) 97004-2051" -> "5521970042051".
+- NUNCA mude os nomes dos campos.
+
+IMPORTANTE:
+- Responda apenas com um array JSON válido.
+- Não inclua explicações, comentários, texto fora do array ou blocos de código.
+- Sua saída deve começar com '[' e terminar com ']'.
+
+`;
+// Pequena ajudinha para delimitar o payload sem confundir o modelo
+function buildUserPrompt(email) {
+    const parts = [
+        "### HEADERS ###",
+        (email.headers || "").slice(0, 200000),
+        "\n\n### SUBJECT ###\n" + (email.subject || ""),
+        "\n\n### FROM ###\n" + (email.from || ""),
+        "\n\n### TO ###\n" + (email.to || ""),
+        "\n\n### PORTAL HINT ###\n" + (email.portalHint || ""),
+        "\n\n### HTML ###\n" + (email.html || ""),
+    ];
+    return parts.join("\n");
+}
+// Parsing resiliente do JSON (tenta achar o primeiro '[' até o par correspondente)
+function safeParseArray(jsonStr) {
+    const first = jsonStr.indexOf("[");
+    const last = jsonStr.lastIndexOf("]");
+    if (first >= 0 && last > first) {
+        const slice = jsonStr.slice(first, last + 1);
+        try {
+            const parsed = JSON.parse(slice);
+            if (Array.isArray(parsed))
+                return parsed;
+        }
+        catch {
+            /* JSON inválido no trecho entre [ e ] */
+        }
+    }
+    try {
+        const parsed = JSON.parse(jsonStr);
+        if (Array.isArray(parsed))
+            return parsed;
+    }
+    catch {
+        /* ignora */
+    }
+    return [];
+}
+// Normaliza garantias mínimas (não quebra seu contrato)
+function postNormalize(item, email) {
+    const norm = { ...item };
+    // Garantir portal se veio vazio
+    if (!norm.portal && email.portalHint)
+        norm.portal = email.portalHint;
+    // Garantir from/to se vazios, usando os do e-mail
+    if (!norm.from && email.from)
+        norm.from = email.from;
+    if (!norm.to && email.to)
+        norm.to = email.to;
+    // value: só dígitos
+    if (norm.value)
+        norm.value = norm.value.replace(/\D+/g, "");
+    // valueRaw: garantir "R$ " no começo se houver número
+    if (norm.value && !norm.valueRaw) {
+        // monta um "R$ xxx" simples (sem centavos) se não informado
+        const int = norm.value.replace(/^0+/, "") || "0";
+        // adiciona pontos a cada 3 dígitos
+        const br = int.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        norm.valueRaw = `R$ ${br}`;
+    }
+    // Campos obrigatórios vazios viram string vazia (já estão)
+    const fields = [
+        "leadName",
+        "leadEmail",
+        "leadPhone",
+        "vehicle",
+        "from",
+        "to",
+        "portal",
+        "valueRaw",
+        "value",
+    ];
+    for (const f of fields) {
+        if (norm[f] == null)
+            norm[f] = "";
+    }
+    return norm;
+}
+// Chamada principal
+async function processEmailWithGPT(email) {
+    const userPrompt = buildUserPrompt(email);
+    // 1ª tentativa
+    let resp = await openai_1.default.chat.completions.create({
+        model: "gpt-5-mini-2025-08-07",
+        temperature: 1.0,
+        messages: [
+            { role: "system", content: SYS_PROMPT },
+            { role: "user", content: userPrompt },
+        ],
+    });
+    let text = resp.choices?.[0]?.message?.content || "";
+    // Se não veio um array JSON, tenta uma 2ª vez pedindo correção
+    if (!text.includes("[") || !text.includes("]")) {
+        const fix = await openai_1.default.chat.completions.create({
+            model: "gpt-4-turbo",
+            temperature: 0,
+            messages: [
+                { role: "system", content: SYS_PROMPT },
+                { role: "user", content: userPrompt },
+                { role: "assistant", content: text },
+                {
+                    role: "user",
+                    content: "Corrija: responda SOMENTE com o array JSON exigido (sem comentários).",
+                },
+            ],
+        });
+        text = fix.choices?.[0]?.message?.content || text;
+    }
+    const arr = safeParseArray(text);
+    // Pós-normalização para garantir seu contrato
+    const normalized = arr.slice(0, 1).map((x) => postNormalize(x, email));
+    // Garante que é exatamente 1 objeto (como você exemplificou)
+    return normalized.length
+        ? normalized[0]
+        : {
+            leadName: "",
+            leadEmail: "",
+            leadPhone: "",
+            vehicle: "",
+            from: email.from || "",
+            to: email.to || "",
+            portal: email.portalHint || "",
+            valueRaw: "",
+            value: "",
+        };
+}
+//# sourceMappingURL=process-email-with-chat-gpt.js.map

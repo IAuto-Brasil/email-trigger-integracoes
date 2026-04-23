@@ -363,5 +363,16 @@ process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
 });
 
+process.on("unhandledRejection", (reason, p) => {
+  console.error("⚠️ unhandledRejection (processo continua):", {
+    at: p,
+    reason,
+  });
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("⚠️ uncaughtException (processo continua se possível):", err);
+});
+
 // Inicia o servidor
-startServer();
+void startServer();

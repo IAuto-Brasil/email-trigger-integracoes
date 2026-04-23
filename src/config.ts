@@ -1,5 +1,18 @@
 import "dotenv/config";
 
+function readIntInRange(
+  envName: string,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const raw = process.env[envName];
+  if (raw == null || raw === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
 export const config = {
   /** Webhook Discord; se vazio, notificações Discord são ignoradas. */
   discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL ?? "",
@@ -33,5 +46,43 @@ export const config = {
   endpoints: {
     dev: process.env.DEV_ENDPOINT!,
     prod: process.env.PROD_ENDPOINT!,
+  },
+  /**
+   * Monitoramento IMAP (tudo opcional; defaults seguros para 24/7).
+   * IMAP_PER_ACCOUNT_TIMEOUT_MS — máximo por conta por ciclo.
+   * IMAP_FULL_CYCLE_RETRIES — quantas passagens completas após falha “de rede”.
+   * IMAP_CONNECT_MAX_ATTEMPTS — retentativas de connect na mesma passagem.
+   */
+  monitoring: {
+    perAccountImapTimeoutMs: readIntInRange(
+      "IMAP_PER_ACCOUNT_TIMEOUT_MS",
+      20 * 60 * 1000,
+      60_000,
+      2 * 60 * 60 * 1000
+    ),
+    imapFullCycleRetryMax: readIntInRange(
+      "IMAP_FULL_CYCLE_RETRIES",
+      2,
+      1,
+      5
+    ),
+    imapFullCycleRetryDelayMs: readIntInRange(
+      "IMAP_FULL_CYCLE_RETRY_DELAY_MS",
+      4_000,
+      500,
+      120_000
+    ),
+    imapConnectMaxAttempts: readIntInRange(
+      "IMAP_CONNECT_MAX_ATTEMPTS",
+      4,
+      1,
+      10
+    ),
+    imapConnectBaseDelayMs: readIntInRange(
+      "IMAP_CONNECT_BASE_DELAY_MS",
+      2_000,
+      500,
+      120_000
+    ),
   },
 };

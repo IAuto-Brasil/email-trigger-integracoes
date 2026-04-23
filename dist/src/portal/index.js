@@ -4,17 +4,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = processEmail;
-const chavesnamao_1 = __importDefault(require("./chavesnamao"));
-const icarros_1 = __importDefault(require("./icarros"));
-function processEmail(email) {
-    console.log(email);
-    const portalDomain = email.from?.split("@")[1] || "";
-    if (portalDomain.includes("icarros")) {
-        return (0, icarros_1.default)(email);
+const process_email_with_chat_gpt_1 = __importDefault(require("./process-email-with-chat-gpt"));
+async function processEmail(email) {
+    try {
+        return await (0, process_email_with_chat_gpt_1.default)(email);
     }
-    if (portalDomain.includes("chavesnamao")) {
-        return (0, chavesnamao_1.default)(email);
+    catch (error) {
+        console.error("❌ Erro ao processar email:", error);
+        return null;
     }
-    return null;
 }
 //# sourceMappingURL=index.js.map
