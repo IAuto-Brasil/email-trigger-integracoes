@@ -11,6 +11,8 @@ import {
 import { discordNotification, NotificationType } from "./discord-notification";
 import { normalizePhone } from "../utils/phone";
 import { isPermanentWhatsAppError } from "../utils/errors";
+import { isLeadPayload } from "../types/lead-payload";
+import type { LeadPayload } from "../types/lead-payload";
 import { isTransientImapError } from "../utils/imap-transient";
 import { withTimeout } from "../utils/promise-timeout";
 import { sleep } from "../utils/sleep";
@@ -100,29 +102,6 @@ class EmailService {
     _emailId: number,
     parsedEmail: ParsedEmail
   ) {
-    // Tipos e guardas para o payload do GPT/cache
-    type LeadPayload = {
-      leadName: string;
-      leadEmail?: string | null;
-      leadPhone?: string | null;
-      vehicle?: string | null;
-      from: string;
-      to: string;
-      portal: string;
-      valueRaw?: string | null;
-      value?: string | null;
-    };
-    const isLeadPayload = (data: any): data is LeadPayload => {
-      return (
-        data &&
-        typeof data === "object" &&
-        typeof data.leadName === "string" &&
-        typeof data.to === "string" &&
-        typeof data.from === "string" &&
-        typeof data.portal === "string"
-      );
-    };
-
     try {
       // 1) Busca no cache primeiro, com validação de tipo
       const cached = await prisma.parsedEmailCache.findUnique({

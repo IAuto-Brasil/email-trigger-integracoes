@@ -13,6 +13,7 @@ const email_monitor_1 = require("./email-monitor");
 const discord_notification_1 = require("./discord-notification");
 const phone_1 = require("../utils/phone");
 const errors_1 = require("../utils/errors");
+const lead_payload_1 = require("../types/lead-payload");
 const imap_transient_1 = require("../utils/imap-transient");
 const promise_timeout_1 = require("../utils/promise-timeout");
 const sleep_1 = require("../utils/sleep");
@@ -77,27 +78,19 @@ class EmailService {
      * Processa um novo email recebido
      */
     async handleNewEmail(accountEmail, _emailId, parsedEmail) {
-        const isLeadPayload = (data) => {
-            return (data &&
-                typeof data === "object" &&
-                typeof data.leadName === "string" &&
-                typeof data.to === "string" &&
-                typeof data.from === "string" &&
-                typeof data.portal === "string");
-        };
         try {
             // 1) Busca no cache primeiro, com validação de tipo
             const cached = await prisma_1.prisma.parsedEmailCache.findUnique({
                 where: { messageId: parsedEmail.messageId },
             });
             let result = null;
-            if (cached?.payload && isLeadPayload(cached.payload)) {
+            if (cached?.payload && (0, lead_payload_1.isLeadPayload)(cached.payload)) {
                 result = cached.payload;
             }
             // 2) Se não tem cache válido, processa com GPT e salva
             if (!result) {
                 const processed = await (0, portal_1.default)(parsedEmail);
-                if (!processed || !isLeadPayload(processed)) {
+                if (!processed || !(0, lead_payload_1.isLeadPayload)(processed)) {
                     return;
                 }
                 result = processed;

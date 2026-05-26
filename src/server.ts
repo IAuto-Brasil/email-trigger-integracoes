@@ -4,6 +4,7 @@ import { prisma } from "../prisma";
 import { emailService } from "./services/email-service";
 import { setupSwagger } from "./swagger";
 import { parseCompanyIdParam } from "./utils/company-id";
+import { getRecentProcessedLeads } from "./services/processed-emails-query";
 import "dotenv/config";
 
 const app = express();
@@ -186,6 +187,77 @@ app.post(
       });
     } catch (error) {
       console.error("Erro ao parar monitoramento:", error);
+      res.status(500).json({
+        success: false,
+        message: "Erro interno do servidor",
+      });
+    }
+  }
+);
+
+
+/**
+ * @swagger
+ * /api/processed-emails/{identifier}:
+ *   get:
+ *     summary: Lista os últimos e-mails processados de uma conta
+ *     tags:
+ *       - Emails
+ *     description: |
+ *       Retorna os leads no JSON final (mesmo formato enviado à API de recebimento).
+ *       Use o ID numérico da tabela `emails` ou o endereço completo (ex. `4528f57f@iautobrasil.com`).
+ *     parameters:
+ *       - in: path
+ *         name: identifier
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID da conta (`emails.id`) ou e-mail completo
+ *         example: "4528f57f@iautobrasil.com"
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 200
+ *           default: 50
+ *         description: Quantidade máxima de registros (mais recentes primeiro)
+ *     responses:
+ *       200:
+ *         description: Lista de processados com payload de lead
+ *       400:
+ *         description: Identificador inválido
+ *       404:
+ *         description: Conta não encontrada
+ */
+app.get(
+  "/api/processed-emails/:identifier",
+  async (req: Request, res: Response) => {
+    const identifier = decodeURIComponent(req.params.identifier ?? "").trim();
+    if (!identifier) {
+      return res.status(400).json({
+        success: false,
+        message: "Informe o ID da conta ou o e-mail completo",
+      });
+    }
+
+    try {
+      const result = await getRecentProcessedLeads(
+        identifier,
+        req.query.limit
+      );
+
+      if (!result) {
+        return res.status(404).json({
+          success: false,
+          message: "Conta de e-mail não encontrada",
+        });
+      }
+
+      res.json({ success: true, ...result });
+    } catch (error) {
+      console.error("Erro ao consultar e-mails processados:", error);
       res.status(500).json({
         success: false,
         message: "Erro interno do servidor",
