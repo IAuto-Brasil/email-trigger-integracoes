@@ -53,13 +53,20 @@ async function safeNotifyConnectionError(
 async function safeNotifyProcessingError(
   accountEmail: string,
   messageId: string,
-  error: unknown
+  error: unknown,
+  context?: {
+    subject?: string | null;
+    from?: string | null;
+    uid?: number;
+    receivedAt?: Date;
+  }
 ): Promise<void> {
   try {
     await discordNotification.notifyEmailProcessingError(
       accountEmail,
       messageId,
-      error
+      error,
+      context
     );
   } catch (notifyErr) {
     console.error("❌ Falha ao notificar Discord (processamento e-mail):", notifyErr);
@@ -273,7 +280,13 @@ export async function monitorEmailAccountRefactor(
         await safeNotifyProcessingError(
           email,
           emailData.messageId,
-          error
+          error,
+          {
+            subject: emailData.subject,
+            from: emailData.from,
+            uid: emailData.uid,
+            receivedAt: emailData.receivedAt,
+          }
         );
       }
     }

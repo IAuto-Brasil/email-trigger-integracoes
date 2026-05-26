@@ -1,5 +1,6 @@
 import axios from "axios";
 import { config } from "../config";
+import type { LeadPayload } from "../types/lead-payload";
 
 export enum NotificationType {
   ERROR = "error",
@@ -8,19 +9,20 @@ export enum NotificationType {
   SUCCESS = "success",
 }
 
+interface DiscordEmbedField {
+  name: string;
+  value: string;
+  inline?: boolean;
+}
+
 interface DiscordEmbed {
   title?: string;
   description?: string;
   color?: number;
-  fields?: Array<{
-    name: string;
-    value: string;
-    inline?: boolean;
-  }>;
+  fields?: DiscordEmbedField[];
   timestamp?: string;
-  footer?: {
-    text: string;
-  };
+  footer?: { text: string };
+  author?: { name: string };
 }
 
 interface DiscordMessage {
@@ -28,31 +30,131 @@ interface DiscordMessage {
   embeds?: DiscordEmbed[];
 }
 
+const FOOTER = "Sistema de Monitoramento de E-mail · IAuto Brasil";
+const AUTHOR = "Email Trigger Integrações";
+const FIELD_VALUE_MAX = 1024;
+const FIELD_NAME_MAX = 256;
+const MAX_FIELDS = 25;
+
+function truncate(text: string, max = FIELD_VALUE_MAX): string {
+  const s = text.trim() || "—";
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function formatTs(date = new Date()): string {
+  return date.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
+
+function companyIdFromEmail(email: string): string {
+  const local = email.split("@")[0]?.trim();
+  return local || "—";
+}
+
+function formatUnknownError(error: unknown): {
+  message: string;
+  code?: string;
+  stack?: string;
+  authFailed?: boolean;
+  response?: string;
+} {
+  if (error == null) return { message: "Erro desconhecido" };
+  if (typeof error === "string") return { message: error };
+  const e = error as {
+    message?: string;
+    code?: string;
+    stack?: string;
+    authenticationFailed?: boolean;
+    response?: string;
+  };
+  return {
+    message: e.message || String(error),
+    code: e.code,
+    stack: e.stack,
+    authFailed: e.authenticationFailed,
+    response: typeof e.response === "string" ? e.response : undefined,
+  };
+}
+
+function leadFields(lead: Partial<LeadPayload> | null | undefined): DiscordEmbedField[] {
+  if (!lead) return [];
+  return [
+    field("Lead", lead.leadName),
+    field("E-mail do lead", lead.leadEmail || "—"),
+    field("Telefone", lead.leadPhone || "—"),
+    field("Portal", lead.portal),
+    field("Veículo", lead.vehicle || "—"),
+    field("Valor", lead.valueRaw || lead.value || "—"),
+    field("De (portal)", lead.from),
+    field("Para (loja)", lead.to),
+    field("Empresa", companyIdFromEmail(lead.to || "")),
+  ];
+}
+
+function field(
+  name: string,
+  value: unknown,
+  inline = true
+): DiscordEmbedField {
+  const str = truncate(String(value ?? "—"));
+  const useInline =
+    inline && str.length <= 40 && !name.toLowerCase().includes("erro");
+  return {
+    name: truncate(name, FIELD_NAME_MAX),
+    value: str,
+    inline: useInline,
+  };
+}
+
+function fieldBlock(name: string, value: unknown): DiscordEmbedField {
+  return field(name, value, false);
+}
+
+function appendFields(
+  target: DiscordEmbedField[],
+  ...items: DiscordEmbedField[]
+): void {
+  for (const item of items) {
+    if (target.length >= MAX_FIELDS) return;
+    target.push(item);
+  }
+}
+
 class DiscordNotificationService {
   private async sendToDiscord(message: DiscordMessage): Promise<void> {
     const url = config.discordWebhookUrl?.trim();
-    if (!url) {
-      return;
-    }
+    if (!url) return;
     try {
       await axios.post(url, message, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        timeout: 10000, // 10 segundos
+        headers: { "Content-Type": "application/json" },
+        timeout: 10_000,
       });
     } catch (error) {
-      // Evita loop infinito de notificações de erro
       console.error("Falha ao enviar notificação para Discord:", error);
     }
   }
 
+  private baseEmbed(
+    type: NotificationType,
+    title: string,
+    description: string
+  ): DiscordEmbed {
+    return {
+      title: `${this.getEmojiByType(type)} ${title}`,
+      description: truncate(description, 4096),
+      color: this.getColorByType(type),
+      timestamp: new Date().toISOString(),
+      author: { name: AUTHOR },
+      footer: { text: FOOTER },
+    };
+  }
+
   private getColorByType(type: NotificationType): number {
     const colors = {
-      [NotificationType.ERROR]: 0xff0000, // Vermelho
-      [NotificationType.WARNING]: 0xffa500, // Laranja
-      [NotificationType.INFO]: 0x0099ff, // Azul
-      [NotificationType.SUCCESS]: 0x00ff00, // Verde
+      [NotificationType.ERROR]: 0xed4245,
+      [NotificationType.WARNING]: 0xfaa61a,
+      [NotificationType.INFO]: 0x5865f2,
+      [NotificationType.SUCCESS]: 0x57f287,
     };
     return colors[type];
   }
@@ -67,178 +169,290 @@ class DiscordNotificationService {
     return emojis[type];
   }
 
-  /**
-   * Envia uma notificação simples
-   */
+  private fieldsFromRecord(
+    details: Record<string, unknown>
+  ): DiscordEmbedField[] {
+    return Object.entries(details).map(([key, value]) => {
+      const str = truncate(String(value ?? "—"));
+      const inline =
+        str.length <= 40 &&
+        !/erro|resposta|stack|mensagem|detalhe/i.test(key);
+      return {
+        name: truncate(key, FIELD_NAME_MAX),
+        value: str,
+        inline,
+      };
+    });
+  }
+
   async sendNotification(
     type: NotificationType,
     title: string,
     message: string,
-    details?: Record<string, any>
+    details?: Record<string, unknown>
   ): Promise<void> {
-    const emoji = this.getEmojiByType(type);
-    const color = this.getColorByType(type);
-
-    const embed: DiscordEmbed = {
-      title: `${emoji} ${title}`,
-      description: message,
-      color,
-      timestamp: new Date().toISOString(),
-      footer: {
-        text: "Sistema de Monitoramento de E-mail",
-      },
-    };
-
-    // Adiciona campos extras se fornecidos
+    const embed = this.baseEmbed(type, title, message);
     if (details) {
-      embed.fields = Object.entries(details).map(([key, value]) => ({
-        name: key,
-        value: String(value),
-        inline: true,
-      }));
+      embed.fields = this.fieldsFromRecord({
+        ...details,
+        "Horário (BR)": formatTs(),
+      });
+    } else {
+      embed.fields = [field("Horário (BR)", formatTs())];
     }
-
     await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Notifica erro específico do cPanel
-   */
   async notifyCpanelError(
     operation: string,
     companyId: string,
-    error: any
+    error: unknown
   ): Promise<void> {
-    await this.sendNotification(
+    const err = formatUnknownError(error);
+    const cpanelErrors =
+      error &&
+      typeof error === "object" &&
+      Array.isArray((error as { errors?: unknown }).errors)
+        ? JSON.stringify((error as { errors: unknown }).errors)
+        : null;
+
+    const fields: DiscordEmbedField[] = [
+      field("Operação", operation, false),
+      field("Empresa ID", companyId),
+      field("Domínio", config.cpanel.domain),
+      field("E-mail esperado", `${companyId}@${config.cpanel.domain}`),
+      field("Host cPanel", truncate(config.cpanel.host, 80)),
+      field("Código", err.code || "—"),
+      fieldBlock("Mensagem", err.message),
+    ];
+    if (cpanelErrors) {
+      appendFields(fields, fieldBlock("Erros cPanel (JSON)", cpanelErrors));
+    }
+    if (err.stack) {
+      appendFields(fields, fieldBlock("Stack (trecho)", err.stack.split("\n").slice(0, 5).join("\n")));
+    }
+    appendFields(fields, field("Horário (BR)", formatTs()));
+
+    const embed = this.baseEmbed(
       NotificationType.ERROR,
       "Erro no cPanel",
-      `Falha na operação: ${operation}`,
-      {
-        "Empresa ID": companyId,
-        Erro: error?.message || String(error),
-        Timestamp: new Date().toLocaleString("pt-BR"),
-      }
+      `Não foi possível concluir **${operation}** para a empresa **${companyId}**.`
     );
+    embed.fields = fields;
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Notifica erro de conexão de e-mail
-   */
-  async notifyEmailConnectionError(email: string, error: any): Promise<void> {
-    await this.sendNotification(
+  async notifyEmailConnectionError(
+    email: string,
+    error: unknown
+  ): Promise<void> {
+    const err = formatUnknownError(error);
+    const isAuth =
+      err.authFailed ||
+      /auth|login|credential|invalid password/i.test(err.message);
+
+    const fields: DiscordEmbedField[] = [
+      field("Conta IMAP", email, false),
+      field("Empresa", companyIdFromEmail(email)),
+      field("Servidor", "mail.iautobrasil.com:993 (SSL)"),
+      field("Tipo", isAuth ? "Autenticação" : "Conexão / rede"),
+      field("Código", err.code || "—"),
+      fieldBlock("Erro", err.message),
+    ];
+
+    if (isAuth) {
+      appendFields(
+        fields,
+        fieldBlock(
+          "Como corrigir",
+          "Confira DEFAULT_PWD no .env ou imapPassword no banco para esta conta. Senha no cPanel deve coincidir."
+        )
+      );
+    } else {
+      appendFields(
+        fields,
+        fieldBlock(
+          "Como corrigir",
+          "Falha transitória comum (Unexpected close). O sistema tentará de novo no próximo ciclo."
+        )
+      );
+    }
+
+    if (err.response) {
+      appendFields(fields, fieldBlock("Resposta IMAP", err.response));
+    }
+    appendFields(fields, field("Horário (BR)", formatTs()));
+
+    const embed = this.baseEmbed(
       NotificationType.ERROR,
       "Erro de Conexão IMAP",
-      `Falha ao conectar com a conta de e-mail`,
-      {
-        "E-mail": email,
-        Erro: error?.message || String(error),
-        Timestamp: new Date().toLocaleString("pt-BR"),
-      }
+      isAuth
+        ? `Falha de **autenticação** na conta **${email}**.`
+        : `Falha ao conectar ou ler a caixa **${email}**.`
     );
+    embed.fields = fields;
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Notifica erro no processamento de e-mail
-   */
   async notifyEmailProcessingError(
-    email: string,
+    accountEmail: string,
     messageId: string,
-    error: any
+    error: unknown,
+    context?: {
+      subject?: string | null;
+      from?: string | null;
+      uid?: number;
+      receivedAt?: Date;
+    }
   ): Promise<void> {
-    await this.sendNotification(
+    const err = formatUnknownError(error);
+    const fields: DiscordEmbedField[] = [
+      field("Conta", accountEmail, false),
+      field("Empresa", companyIdFromEmail(accountEmail)),
+      field("UID IMAP", context?.uid ?? "—"),
+      field("Assunto", context?.subject || "—"),
+      field("Remetente", context?.from || "—"),
+      field(
+        "Recebido em",
+        context?.receivedAt ? formatTs(context.receivedAt) : "—"
+      ),
+      fieldBlock("Message-ID", messageId),
+      fieldBlock("Erro", err.message),
+    ];
+
+    if (error && typeof error === "object" && "response" in error) {
+      const ax = error as { response?: { status?: number; data?: unknown } };
+      if (ax.response?.status) {
+        appendFields(fields, field("HTTP", String(ax.response.status)));
+      }
+      if (ax.response?.data) {
+        appendFields(
+          fields,
+          fieldBlock(
+            "Resposta API",
+            typeof ax.response.data === "string"
+              ? ax.response.data
+              : JSON.stringify(ax.response.data)
+          )
+        );
+      }
+    }
+
+    appendFields(fields, field("Horário (BR)", formatTs()));
+
+    const embed = this.baseEmbed(
       NotificationType.ERROR,
       "Erro no Processamento de E-mail",
-      `Falha ao processar mensagem recebida`,
-      {
-        Conta: email,
-        "Message ID": messageId,
-        Erro: error?.message || String(error),
-        Timestamp: new Date().toLocaleString("pt-BR"),
-      }
+      `Lead não enviado — falha ao processar mensagem na conta **${accountEmail}**.`
     );
+    embed.fields = fields;
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Notifica erro na comunicação com servidor
-   */
   async notifyServerCommunicationError(
-    leadData: any,
-    error: any,
+    leadData: Partial<LeadPayload> | null,
+    error: unknown,
     companyId: string
   ): Promise<void> {
-    // Extrai informações detalhadas do erro Axios
     const errorDetails = this.extractAxiosErrorDetails(error);
+    const fields: DiscordEmbedField[] = [
+      field("Empresa", companyId || companyIdFromEmail(leadData?.to || "")),
+      field("Status HTTP", errorDetails.status ?? "—"),
+      field("Endpoint", truncate(config.receiveLeadUrl, 120), false),
+      fieldBlock("Resumo", errorDetails.description),
+      fieldBlock("Erro principal", errorDetails.mainError),
+    ];
 
-    const fields: Record<string, any> = {
-      Lead: leadData?.leadName || "N/A",
-      "E-mail Lead": leadData?.leadEmail || "N/A",
-      Telefone: leadData?.leadPhone || "N/A",
-      Portal: leadData?.portal || "N/A",
-      Veículo: leadData?.vehicle || "N/A",
-      Valor: leadData?.valueRaw || leadData?.value || "N/A",
-      "Status HTTP": errorDetails.status || "N/A",
-      "Erro Principal": errorDetails.mainError,
-      Timestamp: new Date().toLocaleString("pt-BR"),
-      Empresa: companyId || "N/A",
-    };
+    appendFields(fields, ...leadFields(leadData));
 
-    // Adiciona detalhes específicos se disponíveis
     if (errorDetails.serverMessage) {
-      fields["Resposta do Servidor"] = errorDetails.serverMessage;
+      appendFields(
+        fields,
+        fieldBlock("Mensagem do servidor", errorDetails.serverMessage)
+      );
     }
-
     if (errorDetails.whatsappError) {
-      fields["Erro WhatsApp"] = errorDetails.whatsappError;
+      appendFields(fields, fieldBlock("WhatsApp", errorDetails.whatsappError));
     }
-
     if (errorDetails.evolutionError) {
-      fields["Detalhes Evolution"] = errorDetails.evolutionError;
+      appendFields(
+        fields,
+        fieldBlock("Evolution API", errorDetails.evolutionError)
+      );
+    }
+    if (errorDetails.responseBody) {
+      appendFields(
+        fields,
+        fieldBlock("Corpo da resposta", errorDetails.responseBody)
+      );
     }
 
-    await this.sendNotification(
+    appendFields(fields, field("Horário (BR)", formatTs()));
+
+    const embed = this.baseEmbed(
       NotificationType.ERROR,
       "Erro de Comunicação com Servidor",
-      errorDetails.description,
-      fields
+      `Falha ao enviar lead **${leadData?.leadName || "—"}** para a API de recebimento.`
     );
+    embed.fields = fields.slice(0, MAX_FIELDS);
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Notifica problemas específicos do WhatsApp/Evolution
-   */
   async notifyWhatsAppError(
-    leadData: any,
+    leadData: Partial<LeadPayload> | null,
     phoneNumber: string,
     evolutionError: string
   ): Promise<void> {
-    await this.sendNotification(
+    const fields: DiscordEmbedField[] = [
+      fieldBlock("Situação", evolutionError),
+      field("Telefone enviado", phoneNumber, false),
+      field("Telefone original", leadData?.leadPhone || "—"),
+      field("Ação", "Marcado como processado (evita loop)"),
+    ];
+    appendFields(fields, ...leadFields(leadData));
+    appendFields(fields, field("Horário (BR)", formatTs()));
+
+    const embed = this.baseEmbed(
       NotificationType.WARNING,
       "Problema com Número WhatsApp",
-      `Número ${phoneNumber} não foi aceito pelo WhatsApp`,
-      {
-        Lead: leadData?.leadName || "N/A",
-        "E-mail Lead": leadData?.leadEmail || "N/A",
-        "Telefone Original": leadData?.leadPhone || "N/A",
-        "Telefone Processado": phoneNumber,
-        Portal: leadData?.portal || "N/A",
-        "Erro Evolution": evolutionError,
-        Status: "Número não existe no WhatsApp",
-        Timestamp: new Date().toLocaleString("pt-BR"),
-      }
+      `O número **${phoneNumber}** não foi aceito para o lead **${leadData?.leadName || "—"}**.`
     );
+    embed.fields = fields.slice(0, MAX_FIELDS);
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Extrai informações detalhadas de erros Axios
-   */
-  private extractAxiosErrorDetails(error: any): {
+  async notifyHighValueLead(
+    lead: LeadPayload,
+    accountEmail: string,
+    normalizedPhone: string
+  ): Promise<void> {
+    const fields: DiscordEmbedField[] = [
+      field("Conta IMAP", accountEmail, false),
+      field("Empresa", companyIdFromEmail(accountEmail)),
+      field("Telefone (enviado)", normalizedPhone),
+    ];
+    appendFields(fields, ...leadFields(lead));
+    appendFields(fields, field("Horário (BR)", formatTs()));
+
+    const embed = this.baseEmbed(
+      NotificationType.SUCCESS,
+      "Lead de Alto Valor Processado",
+      `Lead **${lead.leadName}** enviado com sucesso (valor acima do limite configurado).`
+    );
+    embed.fields = fields.slice(0, MAX_FIELDS);
+    await this.sendToDiscord({ embeds: [embed] });
+  }
+
+  private extractAxiosErrorDetails(error: unknown): {
     status?: number;
     mainError: string;
     description: string;
     serverMessage?: string;
     whatsappError?: string;
     evolutionError?: string;
+    responseBody?: string;
   } {
+    const err = formatUnknownError(error);
     const details: {
       status?: number;
       mainError: string;
@@ -246,65 +460,63 @@ class DiscordNotificationService {
       serverMessage?: string;
       whatsappError?: string;
       evolutionError?: string;
+      responseBody?: string;
     } = {
-      mainError: error?.message || String(error),
+      mainError: err.message,
       description: "Falha ao enviar lead para IAuto Brasil",
     };
 
-    // Se for erro Axios
-    if (error?.response) {
-      const response = error.response;
+    if (error && typeof error === "object" && "response" in error) {
+      const response = (error as { response: { status?: number; data?: unknown; statusText?: string } })
+        .response;
       details.status = response.status;
 
-      // Resposta do servidor
-      if (response.data) {
-        const serverData = response.data;
+      if (response.data != null) {
+        details.responseBody =
+          typeof response.data === "string"
+            ? response.data
+            : JSON.stringify(response.data, null, 0);
+
+        const serverData = response.data as {
+          message?: string;
+          value?: string;
+        };
 
         if (serverData.message) {
           details.serverMessage = serverData.message;
 
-          // Analisa mensagens específicas do WhatsApp/Evolution
           if (serverData.message.includes("WhatsApp")) {
             details.description = "Erro no envio via WhatsApp";
-
-            // Extrai detalhes do Evolution
             const evolutionMatch = serverData.message.match(/Evolution: (.+)$/);
             if (evolutionMatch) {
               details.evolutionError = evolutionMatch[1];
-
-              // Tenta parsear JSON do erro da Evolution
               try {
                 const evolutionJson = JSON.parse(
                   evolutionMatch[1]
                     .replace(/^\d+\s+\w+\s+\w+:\s+"/, "")
                     .replace(/"$/, "")
                 );
-                if (evolutionJson.response?.message) {
-                  const messages = evolutionJson.response.message;
-                  if (Array.isArray(messages)) {
-                    details.whatsappError = messages
-                      .map(
-                        (m) =>
-                          `Número ${m.number}: ${
-                            m.exists ? "existe" : "não existe"
-                          } (JID: ${m.jid})`
-                      )
-                      .join(", ");
-                  }
+                const messages = evolutionJson.response?.message;
+                if (Array.isArray(messages)) {
+                  details.whatsappError = messages
+                    .map(
+                      (m: { number?: string; exists?: boolean; jid?: string }) =>
+                        `Número ${m.number}: ${m.exists ? "existe" : "não existe"} (JID: ${m.jid})`
+                    )
+                    .join("\n");
                 }
-              } catch (e) {
-                // Se não conseguir parsear, mantém a string original
+              } catch {
+                // mantém string original
               }
             }
           }
         }
 
         if (serverData.value === "error") {
-          details.description = "Servidor retornou erro";
+          details.description = "Servidor retornou erro no payload";
         }
       }
 
-      // Descrições baseadas no status HTTP
       switch (response.status) {
         case 400:
           details.description = "Requisição inválida (400 Bad Request)";
@@ -336,89 +548,121 @@ class DiscordNotificationService {
     return details;
   }
 
-  /**
-   * Notifica sucesso na criação de e-mail
-   */
   async notifyEmailCreated(companyId: string, email: string): Promise<void> {
-    await this.sendNotification(
+    const embed = this.baseEmbed(
       NotificationType.SUCCESS,
       "E-mail Criado com Sucesso",
-      `Nova conta de e-mail criada e monitoramento iniciado`,
-      {
-        "Empresa ID": companyId,
-        "E-mail": email,
-        Status: "Monitoramento ativo",
-        Timestamp: new Date().toLocaleString("pt-BR"),
-      }
+      `Conta **${email}** criada no cPanel e incluída no monitoramento.`
     );
+    embed.fields = [
+      field("Empresa ID", companyId),
+      field("E-mail", email, false),
+      field("Domínio", config.cpanel.domain),
+      field("Monitoramento", "Ativo no próximo ciclo"),
+      field("Senha IMAP", "DEFAULT_PWD (.env)"),
+      field("Horário (BR)", formatTs()),
+    ];
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Notifica estatísticas do ciclo de monitoramento
-   */
   async notifyMonitoringStats(stats: {
     totalEmails: number;
     newEmailsFound: number;
     processedSuccessfully: number;
     errors: number;
+    whatsappErrors?: number;
+    serverErrors?: number;
     duration: number;
   }): Promise<void> {
     const type =
-      stats.errors > 0 ? NotificationType.WARNING : NotificationType.INFO;
+      stats.errors > stats.processedSuccessfully
+        ? NotificationType.WARNING
+        : stats.errors > 0
+        ? NotificationType.INFO
+        : NotificationType.SUCCESS;
+    const rate =
+      stats.newEmailsFound > 0
+        ? Math.round((stats.processedSuccessfully / stats.newEmailsFound) * 100)
+        : null;
 
-    await this.sendNotification(
+    const embed = this.baseEmbed(
       type,
       "Relatório do Ciclo de Monitoramento",
-      `Ciclo de verificação de e-mails concluído`,
-      {
-        "Contas Monitoradas": String(stats.totalEmails),
-        "E-mails Novos": String(stats.newEmailsFound),
-        "Processados com Sucesso": String(stats.processedSuccessfully),
-        Erros: String(stats.errors),
-        Duração: `${stats.duration}ms`,
-        Timestamp: new Date().toLocaleString("pt-BR"),
-      }
+      `Ciclo concluído em **${(stats.duration / 1000).toFixed(1)}s** · ${stats.totalEmails} conta(s) verificada(s).`
     );
+    embed.fields = [
+      field("Contas monitoradas", stats.totalEmails),
+      field("E-mails novos", stats.newEmailsFound),
+      field("Processados com sucesso", stats.processedSuccessfully),
+      field("Erros (total)", stats.errors),
+      field("Erros WhatsApp", stats.whatsappErrors ?? 0),
+      field("Erros servidor/API", stats.serverErrors ?? 0),
+      field("Taxa de sucesso", rate != null ? `${rate}%` : "N/A"),
+      field("Duração", `${stats.duration} ms`),
+      field("Horário (BR)", formatTs()),
+    ];
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Notifica quando o sistema inicializa
-   */
+  async notifyCriticalCycleError(error: unknown): Promise<void> {
+    const err = formatUnknownError(error);
+    const fields: DiscordEmbedField[] = [
+      fieldBlock("Mensagem", err.message),
+      field("Código", err.code || "—"),
+    ];
+    if (err.stack) {
+      appendFields(
+        fields,
+        fieldBlock("Stack (trecho)", err.stack.split("\n").slice(0, 8).join("\n"))
+      );
+    }
+    appendFields(fields, field("Horário (BR)", formatTs()));
+
+    const embed = this.baseEmbed(
+      NotificationType.ERROR,
+      "Erro Crítico no Ciclo",
+      "Falha geral no ciclo de monitoramento — o agendamento **continua** na próxima janela."
+    );
+    embed.fields = fields;
+    await this.sendToDiscord({ embeds: [embed] });
+  }
+
   async notifySystemStart(intervalMinutes: number): Promise<void> {
-    await this.sendNotification(
+    const embed = this.baseEmbed(
       NotificationType.INFO,
       "Sistema Iniciado",
-      `Monitoramento de e-mails iniciado com sucesso`,
-      {
-        Intervalo: `${intervalMinutes} minuto(s)`,
-        Status: "Ativo",
-        Timestamp: new Date().toLocaleString("pt-BR"),
-      }
+      "Monitoramento IMAP e API de leads **ativo**."
     );
+    embed.fields = [
+      field("Intervalo do ciclo", `${intervalMinutes} min`),
+      field("Porta HTTP", config.server.port),
+      field(
+        "Timeout IMAP/conta",
+        `${Math.round(config.monitoring.perAccountImapTimeoutMs / 60_000)} min`
+      ),
+      field("Ambiente", process.env.NODE_ENV || "development"),
+      field("Discord", config.discordWebhookUrl ? "Configurado" : "Desativado"),
+      field("Horário (BR)", formatTs()),
+    ];
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Notifica quando o sistema para
-   */
   async notifySystemStop(): Promise<void> {
-    await this.sendNotification(
+    const embed = this.baseEmbed(
       NotificationType.WARNING,
       "Sistema Parado",
-      `Monitoramento de e-mails foi interrompido`,
-      {
-        Status: "Inativo",
-        Timestamp: new Date().toLocaleString("pt-BR"),
-      }
+      "Monitoramento de e-mails **interrompido** (SIGINT/SIGTERM ou parada manual)."
     );
+    embed.fields = [
+      field("Status", "Inativo"),
+      field("Horário (BR)", formatTs()),
+    ];
+    await this.sendToDiscord({ embeds: [embed] });
   }
 
-  /**
-   * Envia mensagem customizada (para casos especiais)
-   */
   async sendCustomMessage(content: string): Promise<void> {
     await this.sendToDiscord({ content });
   }
 }
 
-// Exporta uma instância singleton
 export const discordNotification = new DiscordNotificationService();

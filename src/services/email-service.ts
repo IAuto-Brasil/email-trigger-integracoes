@@ -8,7 +8,7 @@ import {
   ParsedEmail,
   cleanupOldProcessedEmails,
 } from "./email-monitor";
-import { discordNotification, NotificationType } from "./discord-notification";
+import { discordNotification } from "./discord-notification";
 import { normalizePhone } from "../utils/phone";
 import { isPermanentWhatsAppError } from "../utils/errors";
 import { isLeadPayload } from "../types/lead-payload";
@@ -178,16 +178,10 @@ class EmailService {
             !Number.isNaN(valueNum) &&
             valueNum > 5_000_000
           ) {
-            await discordNotification.sendNotification(
-              NotificationType.SUCCESS,
-              "Lead de Alto Valor Processado",
-              `Lead de ${result.leadName} processado com sucesso`,
-              {
-                Valor: result.valueRaw,
-                Veículo: result.vehicle,
-                Portal: result.portal,
-                Telefone: normalizedPhone,
-              }
+            await discordNotification.notifyHighValueLead(
+              result,
+              accountEmail,
+              normalizedPhone
             );
           }
         } catch (httpError: any) {
@@ -366,34 +360,16 @@ class EmailService {
       );
 
       if (totalNewEmails > 0 || errors > 0) {
-        const statsDetails = {
-          "Contas Monitoradas": String(allEmails.length),
-          "E-mails Novos": String(totalNewEmails),
-          "Processados com Sucesso": String(successfullyProcessed),
-          "Erros Total": String(errors),
-          "Erros WhatsApp": String(whatsappErrors),
-          "Erros Servidor": String(serverErrors),
-          Duração: `${duration}ms`,
-          "Taxa de Sucesso":
-            totalNewEmails > 0
-              ? `${Math.round((successfullyProcessed / totalNewEmails) * 100)}%`
-              : "N/A",
-        };
-
-        const notificationType =
-          errors > successfullyProcessed
-            ? NotificationType.WARNING
-            : errors > 0
-            ? NotificationType.INFO
-            : NotificationType.SUCCESS;
-
         try {
-          await discordNotification.sendNotification(
-            notificationType,
-            "📊 Relatório do Ciclo de Monitoramento",
-            `Ciclo de verificação concluído`,
-            statsDetails
-          );
+          await discordNotification.notifyMonitoringStats({
+            totalEmails: allEmails.length,
+            newEmailsFound: totalNewEmails,
+            processedSuccessfully: successfullyProcessed,
+            errors,
+            whatsappErrors,
+            serverErrors,
+            duration,
+          });
         } catch (notifyErr) {
           console.error("❌ Falha ao enviar relatório do ciclo ao Discord:", notifyErr);
         }
@@ -403,15 +379,7 @@ class EmailService {
       errors++;
 
       try {
-        await discordNotification.sendNotification(
-          NotificationType.ERROR,
-          "💥 Erro Crítico no Sistema",
-          "Falha geral no ciclo de monitoramento",
-          {
-            Erro: error?.message || String(error),
-            Timestamp: new Date().toLocaleString("pt-BR"),
-          }
-        );
+        await discordNotification.notifyCriticalCycleError(error);
       } catch (notifyErr) {
         console.error("❌ Falha ao notificar Discord (ciclo crítico):", notifyErr);
       }

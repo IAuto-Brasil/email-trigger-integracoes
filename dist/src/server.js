@@ -185,17 +185,6 @@ app.post("/api/stop-monitoring/:companyId", async (req, res) => {
 });
 /**
  * @swagger
- * /api/monitoring-stats:
- *   get:
- *     summary: Retorna estatísticas do monitoramento
- *     tags:
- *       - Emails
- *     responses:
- *       200:
- *         description: Estatísticas do sistema
- */
-/**
- * @swagger
  * /api/processed-emails/{identifier}:
  *   get:
  *     summary: Lista os últimos e-mails processados de uma conta
@@ -255,6 +244,17 @@ app.get("/api/processed-emails/:identifier", async (req, res) => {
         });
     }
 });
+/**
+ * @swagger
+ * /api/monitoring-stats:
+ *   get:
+ *     summary: Retorna estatísticas do monitoramento
+ *     tags:
+ *       - Emails
+ *     responses:
+ *       200:
+ *         description: Estatísticas do sistema
+ */
 app.get("/api/monitoring-stats", async (req, res) => {
     try {
         const stats = await email_service_1.emailService.getStats();

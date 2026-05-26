@@ -29,9 +29,9 @@ async function safeNotifyConnectionError(email, error) {
         console.error("❌ Falha ao notificar Discord (IMAP):", notifyErr);
     }
 }
-async function safeNotifyProcessingError(accountEmail, messageId, error) {
+async function safeNotifyProcessingError(accountEmail, messageId, error, context) {
     try {
-        await discord_notification_1.discordNotification.notifyEmailProcessingError(accountEmail, messageId, error);
+        await discord_notification_1.discordNotification.notifyEmailProcessingError(accountEmail, messageId, error, context);
     }
     catch (notifyErr) {
         console.error("❌ Falha ao notificar Discord (processamento e-mail):", notifyErr);
@@ -184,7 +184,12 @@ async function monitorEmailAccountRefactor(email, password, onNewMail) {
                 // Marca falha recente para aplicar cooldown
                 recentFailures.set(emailData.messageId, Date.now());
                 console.log(`⏳ Cooldown aplicado para ${emailData.messageId} por ${FAILURE_COOLDOWN_MS / (60 * 1000)} minutos`);
-                await safeNotifyProcessingError(email, emailData.messageId, error);
+                await safeNotifyProcessingError(email, emailData.messageId, error, {
+                    subject: emailData.subject,
+                    from: emailData.from,
+                    uid: emailData.uid,
+                    receivedAt: emailData.receivedAt,
+                });
             }
         }
     }
