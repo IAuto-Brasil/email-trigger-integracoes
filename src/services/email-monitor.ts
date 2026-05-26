@@ -135,7 +135,8 @@ export async function monitorEmailAccountRefactor(
       return;
     }
 
-    const fetchWindowMs = 48 * 60 * 60 * 1000; // 48 horas
+    const fetchWindowDays = 7;
+    const fetchWindowMs = fetchWindowDays * 24 * 60 * 60 * 1000;
     const windowStart = new Date(Date.now() - fetchWindowMs);
 
     const messages = client.fetch(
@@ -163,7 +164,7 @@ export async function monitorEmailAccountRefactor(
     }
 
     console.log(
-      `📨 ${email}: Encontrados ${allEmails.length} e-mail(s) na janela de ${fetchWindowMs / 3_600_000} h`
+      `📨 ${email}: Encontrados ${allEmails.length} e-mail(s) na janela dos últimos ${fetchWindowDays} dias`
     );
 
     if (allEmails.length === 0) {
