@@ -9,6 +9,20 @@ import "dotenv/config";
 
 const app = express();
 
+// CORS — necessário para o frontend (multi-chat-space) consultar /api/processed-emails no browser
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "authorization, content-type, x-client-info, apikey"
+  );
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // Middleware para parsing do JSON
 app.use(express.json());
 setupSwagger(app);

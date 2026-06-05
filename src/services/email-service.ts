@@ -43,9 +43,18 @@ class EmailService {
       });
 
       if (existingEmail) {
+        if (!existingEmail.isActive) {
+          await prisma.email.update({
+            where: { id: existingEmail.id },
+            data: { isActive: true },
+          });
+          console.log(`♻️ Monitoramento reativado para ${existingEmail.email}`);
+        }
         return {
           success: true,
-          message: "Email já existe e será monitorado no próximo ciclo",
+          message: existingEmail.isActive
+            ? "Email já existe e será monitorado no próximo ciclo"
+            : "Email já existe — monitoramento reativado",
           email: existingEmail.email,
         };
       }
